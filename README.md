@@ -1,4 +1,4 @@
-# Ketchup 🍅
+# Ketchup 
 
 A lightweight drawing engine starter kit for web applications. Ketchup provides a robust canvas system with support for shapes, text, images, and map editing, along with essential features such as undo/redo, JSON import/export, and image saving.
 
