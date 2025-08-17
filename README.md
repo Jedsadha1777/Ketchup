@@ -139,20 +139,20 @@ graph TD
 
 ```mermaid
 graph TD
-    RENDER[render()] --> CLEAR[Clear Canvas]
+    RENDER["render()"] --> CLEAR[Clear Canvas]
     CLEAR --> GRID[Draw Grid]
     GRID --> OBJECTS[Draw Objects]
     
     OBJECTS --> LOOP{For Each Object}
     LOOP --> GET_RENDERER[Get Renderer]
-    GET_RENDERER --> DRAW_OBJ[renderer.draw()]
+    GET_RENDERER --> DRAW_OBJ["renderer.draw()"]
     DRAW_OBJ --> LOOP
     
     LOOP --> OVERLAY[Draw Tool Overlay]
     OVERLAY --> DONE[Render Complete]
     
     subgraph "Optimized Rendering"
-        DIRTY[addDirtyRect()] --> COALESCE[Coalesce Rects]
+        DIRTY["addDirtyRect()"] --> COALESCE[Coalesce Rects]
         COALESCE --> CLIP[Set Clip Region]
         CLIP --> REDRAW[Redraw Dirty Areas Only]
     end
