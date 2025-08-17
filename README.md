@@ -1,4 +1,4 @@
-# Ketchup 
+# Ketchup 🍅
 
 A lightweight drawing engine starter kit for web applications. Ketchup provides a robust canvas system with support for shapes, text, images, and map editing, along with essential features such as undo/redo, JSON import/export, and image saving.
 
@@ -37,101 +37,180 @@ const editor = new MapEditor(canvas);
 
 ## Architecture
 
+### Core System Overview
+
 ```mermaid
 graph TB
-    subgraph "UI Layer"
-        UI[UI Panels]
-        TB[Toolbar Panel]
-        IP[Inspector Panel]
-        CP[Control Panel]
+    subgraph "Application Layer"
+        HTML[index.html]
+        ME[MapEditor]
     end
     
     subgraph "Core Engine"
-        ME[MapEditor]
         CE[CanvasEngine]
+        PM[PluginManager]
         TR[ToolRegistry]
         RR[RendererRegistry]
-        PM[PluginManager]
     end
     
-    subgraph "Data Management"
+    subgraph "Data Layer"
         OM[ObjectManager]
         SG[SpatialGrid]
         HIS[History]
         IM[ImageManager]
     end
     
-    subgraph "Tools"
-        ST[SelectTool]
-        DT[DrawingTool]
-        TT[TextTool]
-        IT[ImageTool]
-        PT[PanTool]
-        WT[WaypointTool]
-    end
-    
-    subgraph "Renderers"
-        RR1[RectangleRenderer]
-        CR[CircleRenderer]
-        TR1[TextRenderer]
-        IR[ImageRenderer]
-        MOR[MapObjectRenderer]
-        WR[WaypointRenderer]
-    end
-    
-    subgraph "Operations"
-        CO[ClipboardOperations]
-        FO[FileOperations]
-        IEO[ImageExportOperations]
-        OOO[ObjectOrderOperations]
-    end
-    
-    subgraph "Commands"
-        CC[CreateObjectCmd]
-        DC[DeleteObjectCmd]
-        MC[MoveObjectCmd]
-        RC[ResizeObjectCmd]
-        UC[UpdateObjectCmd]
-        MOC[MoveObjectOrderCmd]
-        SOC[SwapObjectOrderCmd]
-    end
-    
-    UI --> ME
+    HTML --> ME
     ME --> CE
-    ME --> TR
-    ME --> RR
     ME --> PM
     ME --> OM
-    ME --> SG
+    CE --> TR
+    CE --> RR
+    OM --> SG
     ME --> HIS
     ME --> IM
+```
+
+### Plugin System Architecture
+
+```mermaid
+graph LR
+    PM[PluginManager] --> CP[CorePlugin]
+    PM --> TP[TextPlugin]
+    PM --> CUSTOM[CustomPlugin]
     
-    TR --> ST
-    TR --> DT
-    TR --> TT
-    TR --> IT
-    TR --> PT
-    TR --> WT
+    CP --> CT[Core Tools]
+    CP --> CR[Core Renderers]
     
-    RR --> RR1
-    RR --> CR
-    RR --> TR1
-    RR --> IR
-    RR --> MOR
-    RR --> WR
+    TP --> TT[TextTool]
+    TP --> TR[TextRenderer]
     
-    ME --> CO
-    ME --> FO
-    ME --> IEO
-    ME --> OOO
+    CUSTOM --> CTOOL[Custom Tools]
+    CUSTOM --> CRENDER[Custom Renderers]
     
-    HIS --> CC
-    HIS --> DC
-    HIS --> MC
-    HIS --> RC
-    HIS --> UC
-    HIS --> MOC
-    HIS --> SOC
+    CT --> SELECT[SelectTool]
+    CT --> DRAW[DrawingTool]
+    CT --> PAN[PanTool]
+    CT --> IMAGE[ImageTool]
+    CT --> WAY[WaypointTool]
+```
+
+### UI Components Flow
+
+```mermaid
+graph TD
+    USER[User Interaction] --> TB[ToolbarPanel]
+    USER --> CANVAS[Canvas Events]
+    USER --> IP[InspectorPanel]
+    
+    TB --> TR[ToolRegistry]
+    CANVAS --> TOOL[Active Tool]
+    IP --> CMD[Update Commands]
+    
+    TOOL --> HIS[History]
+    CMD --> HIS
+    
+    HIS --> RENDER[Render Update]
+    RENDER --> IP
+    RENDER --> INFO[Update Info Display]
+```
+
+### Data Flow & Command Pattern
+
+```mermaid
+graph TD
+    ACTION[User Action] --> TOOL[Tool Handler]
+    TOOL --> CMD[Create Command]
+    CMD --> HIS[History.exec]
+    
+    HIS --> DO[Command.do]
+    DO --> OM[ObjectManager]
+    DO --> SG[SpatialGrid]
+    
+    OM --> RENDER[Trigger Render]
+    SG --> HIT[Hit Testing]
+    
+    UNDO[Undo Action] --> HIS
+    HIS --> UNDO_CMD[Command.undo]
+    UNDO_CMD --> RESTORE[Restore State]
+```
+
+### Rendering Pipeline
+
+```mermaid
+graph TD
+    RENDER[render()] --> CLEAR[Clear Canvas]
+    CLEAR --> GRID[Draw Grid]
+    GRID --> OBJECTS[Draw Objects]
+    
+    OBJECTS --> LOOP{For Each Object}
+    LOOP --> GET_RENDERER[Get Renderer]
+    GET_RENDERER --> DRAW_OBJ[renderer.draw()]
+    DRAW_OBJ --> LOOP
+    
+    LOOP --> OVERLAY[Draw Tool Overlay]
+    OVERLAY --> DONE[Render Complete]
+    
+    subgraph "Optimized Rendering"
+        DIRTY[addDirtyRect()] --> COALESCE[Coalesce Rects]
+        COALESCE --> CLIP[Set Clip Region]
+        CLIP --> REDRAW[Redraw Dirty Areas Only]
+    end
+```
+
+### Tool Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Inactive
+    Inactive --> Active: useTool(id)
+    Active --> Active: Tool Events
+    Active --> Deactivated: Tool Change
+    Deactivated --> [*]: cleanup()
+    
+    state Active {
+        [*] --> Ready
+        Ready --> PointerDown: onPointerDown()
+        PointerDown --> Dragging: onPointerMove()
+        Dragging --> PointerUp: onPointerUp()
+        PointerUp --> Ready
+        
+        Ready --> KeyDown: onKeyDown()
+        KeyDown --> Ready
+    }
+```
+
+### Object Management Structure
+
+```mermaid
+erDiagram
+    ObjectManager {
+        array ids
+        array types
+        array mapTypes
+        array x
+        array y
+        array width
+        array height
+        array colors
+        array selected
+        array labels
+        array extra
+        map idToIndex
+    }
+    
+    SpatialGrid {
+        map grid
+        number cellSize
+    }
+    
+    History {
+        array undoStack
+        array redoStack
+    }
+    
+    ObjectManager ||--|| SpatialGrid : "spatial indexing"
+    ObjectManager ||--|| History : "command execution"
 ```
 
 ## Plugin Development
