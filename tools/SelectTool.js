@@ -27,6 +27,9 @@ export class SelectTool extends ITool {
         this.multiDragStartPositions = new Map();
         this.snapDeltaX = undefined;
         this.snapDeltaY = undefined;
+
+         // Track click timing for double-click detection
+        this.lastClickTime = 0;
     }
 
     activate(ctx) {
@@ -36,7 +39,11 @@ export class SelectTool extends ITool {
     onPointerDown(e, pos, ctx) {
         const selectedIndex = ctx.objects.getSelected();
         const isCtrlClick = e.ctrlKey || e.metaKey;
-        const isDoubleClick = e.detail === 2;
+
+        const currentTime = Date.now();
+        const isDoubleClick = (currentTime - this.lastClickTime) < 300 && e.detail === 2;
+        this.lastClickTime = currentTime;
+
 
         // Check if clicking on any selected object first
         const clickedIndex = ctx.getObjectAt(pos.x, pos.y);
@@ -44,19 +51,22 @@ export class SelectTool extends ITool {
 
         // Handle double-click for text editing
         if (isDoubleClick && clickedIndex !== -1 && ctx.objects.types[clickedIndex] === 'text') {
-            const textTool = ctx.tools.get('text');
-            if (textTool) {
-                ctx.objects.selectObject(clickedIndex);
-                
-                // Switch to text tool and start editing
-                ctx.useTool('text');
-                const currentTextTool = ctx.tools.get('text');
-                currentTextTool.wasAutoSwitched = true; // ตั้ง flag
-               currentTextTool.startEditing(clickedIndex, ctx);
 
-                return;
+            // Only switch to text tool on double-click if object is already selected
+            if (selectedIndex === clickedIndex) {
+                // Object is already selected, switch to text tool for editing
+                ctx.useTool('text');
+                const textTool = ctx.tools.get('text');
+                if (textTool) {
+                    textTool.wasAutoSwitched = true;
+                    textTool.onPointerDown(e, pos, ctx);
+                }
+            } else {
+                // First click selects, second click (if double) will edit
+                ctx.objects.selectObject(clickedIndex);
             }
-        }
+             return;
+         }
 
         // Commit any pending resize operation before changing selection
         if (this.isResizing && this.resizeObjectId && this.resizeStartBounds) {
