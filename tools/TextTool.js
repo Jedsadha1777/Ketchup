@@ -4,7 +4,7 @@ import { TextUtils } from '../utils/TextUtils.js';
 export class TextTool extends ITool {
     constructor() {
         super('text', 'Text', {
-             icon: 'ðŸ“',
+             icon: '📝',
             cursor: 'text'
         });
         this.isEditing = false;
