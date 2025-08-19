@@ -33,6 +33,7 @@ export class InspectorPanel {
             extra: this.editor.objects.extra[selectedIndex]
         };
 
+        obj.objectId = this.editor.objects.getObjectId(selectedIndex);
         this.contentElement.innerHTML = this.generateHTML(obj);
         this.bindEvents(obj);
     }
@@ -53,6 +54,12 @@ export class InspectorPanel {
                 </div>
             `;
         }
+
+        html += `
+           <div class="inspector-field">
+                <div class="inspector-label">Object ID</div>
+                <input type="text" class="inspector-input" id="inspector-objectId" value="${obj.objectId || ''}" placeholder="e.g. player, door1">            </div>
+        `;
 
          // Add Z-Order information
         const orderOps = this.editor.objectOrderOps;
@@ -163,7 +170,8 @@ export class InspectorPanel {
                 // Color property 
                 color: () => this.updateBasicProperty('color', parsedValue),
                 label: () => this.updateBasicProperty('label', parsedValue),
-                
+                objectId: () => this.updateBasicProperty('objectId', parsedValue),
+
                 // Extra properties (text, images)
                 text: () => this.updateExtraProperty('text', parsedValue),
                 fontSize: () => this.updateExtraProperty('fontSize', parsedValue),
@@ -197,6 +205,8 @@ export class InspectorPanel {
             let currentValue;
             if (property === 'color') {
                 currentValue = this.editor.objects.colors[obj.index];
+            } else if (property === 'objectId') {
+                currentValue = this.editor.objects.getObjectId(obj.index);
             } else if (property === 'label') {
                 currentValue = this.editor.objects.labels[obj.index];
             } else {
@@ -281,7 +291,32 @@ export class InspectorPanel {
 
 
         addInputEventListener('inspector-label', 'change', (e) => updateProperty('label', e.target.value));
-      
+        
+       // Object ID with validation
+        addInputEventListener('inspector-objectId', 'change', (e) => {
+            const newObjectId = e.target.value.trim();
+            
+            // Validate Object ID
+            if (newObjectId && !this.isValidObjectId(newObjectId)) {
+                alert('Object ID must contain only letters, numbers, underscore, and hyphen');
+                e.target.value = this.editor.objects.getObjectId(obj.index);
+                 return;
+             }
+            
+             if (newObjectId && !this.editor.objects.isObjectIdAvailable(newObjectId) && 
+                this.editor.objects.getObjectId(obj.index) !== newObjectId) {
+                alert('Object ID already exists');
+                e.target.value = this.editor.objects.getObjectId(obj.index);
+                return;
+             }
+            
+            updateProperty('objectId', newObjectId);
+
+        });
+
+        
+
+
        // Special handling for opacity slider
        const opacityInput = document.getElementById('inspector-opacity');
         if (opacityInput) {
@@ -308,6 +343,7 @@ export class InspectorPanel {
             });
         }
 
+        
 
         // Text content - update display immediately, save command on blur
         addInputEventListener('inspector-text', 'input', (e) => {
@@ -348,5 +384,9 @@ export class InspectorPanel {
                 this.update(); // Refresh inspector 
             }
         });
+    }
+
+    isValidObjectId(objectId) {
+        return /^[a-zA-Z0-9_-]+$/.test(objectId);
     }
 }

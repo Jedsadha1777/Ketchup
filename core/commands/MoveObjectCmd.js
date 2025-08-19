@@ -8,6 +8,8 @@ export class MoveObjectCmd extends Command {
         this.objectId = objectId;
         this.from = from;
         this.to = to;
+        this.propertyEvents = null; // Will be set by editor
+
     }
 
     do() {
@@ -20,6 +22,14 @@ export class MoveObjectCmd extends Command {
         
         // Update object position
         this.om.updateObject(index, this.to);
+
+        // Trigger property change events
+        if (this.propertyEvents && this.from.x !== this.to.x) {
+            this.propertyEvents.triggerPropertyChange(index, 'x', this.to.x, this.from.x);
+        }
+        if (this.propertyEvents && this.from.y !== this.to.y) {
+            this.propertyEvents.triggerPropertyChange(index, 'y', this.to.y, this.from.y);
+        }
         
         // Add to spatial grid at new position
         this.sg.addObject(this.objectId, this.to.x, this.to.y,
@@ -36,6 +46,14 @@ export class MoveObjectCmd extends Command {
         
         // Restore object position
         this.om.updateObject(index, this.from);
+
+         // Trigger property change events
+        if (this.propertyEvents && this.to.x !== this.from.x) {
+            this.propertyEvents.triggerPropertyChange(index, 'x', this.from.x, this.to.x);
+        }
+        if (this.propertyEvents && this.to.y !== this.from.y) {
+            this.propertyEvents.triggerPropertyChange(index, 'y', this.from.y, this.to.y);
+        }
         
         // Add to spatial grid at old position
         this.sg.addObject(this.objectId, this.from.x, this.from.y,

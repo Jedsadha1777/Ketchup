@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runtime Map Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui; background: #2c2c2c; overflow: hidden; }
+        
+        .runtime-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #1e1e1e;
+        }
+        
+        .runtime-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .runtime-controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .runtime-controls button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            margin: 2px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        .runtime-controls button:hover {
+            background: #0088ff;
+        }
+        
+        .runtime-log {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="runtime-container">
+        <canvas id="runtime-canvas"></canvas>
+        
+        <div class="runtime-info">
+            <div>Runtime Map Viewer</div>
+            <div>Objects: <span id="object-count">0</span></div>
+            <div>Events: <span id="events-status">Disabled</span></div>
+            <div>Mode: <span id="viewer-mode">Runtime</span></div>
+        </div>
+        
+        <div class="runtime-controls">
+            <button onclick="loadSampleMap()">Load Sample Map</button>
+            <button onclick="testEvents()">Test Events</button>
+            <button onclick="clearLog()">Clear Log</button>
+            <button onclick="exportCurrentMap()">Export Map</button>
+            <input type="file" id="file-input" accept=".json" style="display: none;" onchange="loadMapFile(event)">
+            <button onclick="document.getElementById('file-input').click()">Load Map File</button>
+        </div>
+        
+        <div class="runtime-log" id="event-log">
+            <div>🚀 Runtime Viewer Ready</div>
+            <div>📝 Events will appear here...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { RuntimeViewer } from './runtime/RuntimeViewer.js';
+
+        let viewer = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('runtime-canvas');
+            
+            viewer = new RuntimeViewer(canvas, {
+                showGrid: true,
+                enableEvents: true,
+                enableInteraction: true,
+                backgroundColor: '#f5f5f5'
+            });
+
+            // Setup event listeners
+            viewer.on('mapLoaded', (data) => {
+                updateInfo();
+                log(`✅ Map loaded: ${data.objectCount} objects`);
+            });
+
+            viewer.on('objectClick', (data) => {
+                log(`🖱️ Clicked: ${data.objectId || 'unnamed'} at (${data.position.x.toFixed(1)}, ${data.position.y.toFixed(1)})`);
+            });
+
+            viewer.on('objectHover', (data) => {
+                if (data.objectId) {
+                    document.title = `Runtime Viewer - Hovering: ${data.objectId}`;
+                }
+            });
+
+            // Make viewer globally accessible for testing
+            window.viewer = viewer;
+            
+            updateInfo();
+        });
+
+        function updateInfo() {
+            const info = viewer.getRuntimeInfo();
+            document.getElementById('object-count').textContent = info.objectCount;
+            document.getElementById('events-status').textContent = info.eventSystemEnabled ? 'Enabled' : 'Disabled';
+        }
+
+        function log(message) {
+            const logElement = document.getElementById('event-log');
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `[${time}] ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        // Global functions for testing
+        window.loadSampleMap = function() {
+            const sampleData = {
+                version: 1,
+                objects: [
+                    {
+                        id: 0, type: 'rectangle', mapType: 'wall', x: 100, y: 100, w: 200, h: 50,
+                        color: '#2c3e50', label: 'Wall 1', objectId: 'wall1', extra: null
+                    },
+                    {
+                        id: 1, type: 'rectangle', mapType: 'room', x: 150, y: 200, w: 300, h: 200,
+                        color: '#3498db', label: 'Main Room', objectId: 'main_room', extra: null
+                    },
+                    {
+                        id: 2, type: 'circle', mapType: 'waypoint', x: 280, y: 280, w: 20, h: 20,
+                        color: '#e74c3c', label: 'Spawn Point', objectId: 'player_spawn', extra: null
+                    },
+                    {
+                        id: 3, type: 'text', mapType: null, x: 200, y: 50, w: 120, h: 30,
+                        color: '#000000', label: '', objectId: 'title_text', 
+                        extra: { text: 'Sample Map', fontSize: 18, fontFamily: 'Arial' }
+                    }
+                ]
+            };
+            
+            viewer.loadMapData(sampleData);
+        };
+
+        window.testEvents = function() {
+            if (!viewer.propertyEvents) {
+                log("❌ Events not enabled");
+                return;
+            }
+
+            // Setup event callbacks
+            viewer.api.onPropertyChange("wall1", "x", (newX, oldX) => {
+                log(`📦 wall1 moved X: ${oldX} → ${newX}`);
+            });
+
+            viewer.api.onPropertyChange("player_spawn", "x", (newX, oldX) => {
+                log(`🎯 player_spawn moved X: ${oldX} → ${newX}`);
+            });
+
+            // Test property changes immediately
+            log("🧪 Testing property changes...");
+            viewer.api.setProperty("wall1", "x", 150);
+            viewer.api.setProperty("player_spawn", "x", 320);
+            viewer.api.setProperty("main_room", "color", "#27ae60");
+        };
+
+        window.clearLog = function() {
+            document.getElementById('event-log').innerHTML = '<div>📝 Log cleared</div>';
+        };
+
+        window.exportCurrentMap = function() {
+            const mapData = viewer.objects.toJSON();
+            const blob = new Blob([JSON.stringify(mapData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `runtime-map-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            log("💾 Map exported");
+        };
+
+        window.loadMapFile = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const mapData = JSON.parse(e.target.result);
+                    viewer.loadMapData(mapData);
+                    log(`📁 Loaded map from file: ${file.name}`);
+                } catch (error) {
+                    log(`❌ Failed to load map: ${error.message}`);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+    </script>
+</body>
+</html>

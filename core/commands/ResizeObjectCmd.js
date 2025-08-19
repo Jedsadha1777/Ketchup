@@ -8,6 +8,8 @@ export class ResizeObjectCmd extends Command {
         this.objectId = objectId;
         this.from = fromBounds;
         this.to = toBounds;
+        this.propertyEvents = null; // Will be set by editor
+
     }
 
     do() {
@@ -35,6 +37,22 @@ export class ResizeObjectCmd extends Command {
         
         // Restore object bounds
         this.om.setBounds(index, this.from);
+
+        // Trigger property change events
+        if (this.propertyEvents) {
+            if (this.to.x !== this.from.x) {
+                this.propertyEvents.triggerPropertyChange(index, 'x', this.from.x, this.to.x);
+            }
+            if (this.to.y !== this.from.y) {
+                this.propertyEvents.triggerPropertyChange(index, 'y', this.from.y, this.to.y);
+            }
+            if (this.to.width !== this.from.width) {
+                this.propertyEvents.triggerPropertyChange(index, 'width', this.from.width, this.to.width);
+            }
+            if (this.to.height !== this.from.height) {
+                this.propertyEvents.triggerPropertyChange(index, 'height', this.from.height, this.to.height);
+            }
+        }
 
         
         // Add to spatial grid at old bounds

@@ -11,6 +11,8 @@ export class ObjectManager {
         this.width = [];
         this.height = [];
         this.colors = [];
+        this.objectIds = [];
+        this.objectIdToIndex = new Map();
         this.selected = [];
         this.labels = [];
         this.extra = [];
@@ -34,6 +36,7 @@ export class ObjectManager {
         this.colors[index] = color;
         this.selected[index] = false;
         this.labels[index] = '';
+        this.objectIds[index] = '';
         this.extra[index] = null;
         
         // Update ID mapping
@@ -42,8 +45,44 @@ export class ObjectManager {
         return { id, index };
     }
 
+    setObjectId(index, objectId) {
+       if (index < 0 || index >= this.objectIds.length) return false;
+
+        
+        // Remove old mapping if exists
+        const oldObjectId = this.objectIds[index];
+        if (oldObjectId) {
+            this.objectIdToIndex.delete(oldObjectId);
+        }
+        
+        // Set new mapping
+        this.objectIds[index] = objectId;
+        if (objectId) {
+            this.objectIdToIndex.set(objectId, index);
+        }
+        return true;
+    }
+
+    getObjectId(index) {
+        return this.objectIds[index] || '';
+    }
+
+    getIndexByObjectId(objectId) {
+        return this.objectIdToIndex.get(objectId);
+    }
+
+    isObjectIdAvailable(objectId) {
+        return !this.objectIdToIndex.has(objectId);
+    }
+
     removeObject(index) {
         const id = this.ids[index];
+        const objectId = this.objectIds[index];
+         
+       // Remove from objectId mapping
+        if (objectId) {
+            this.objectIdToIndex.delete(objectId);
+         }
         
         // Remove from arrays
         this.ids.splice(index, 1);
@@ -56,6 +95,7 @@ export class ObjectManager {
         this.colors.splice(index, 1);
         this.selected.splice(index, 1);
         this.labels.splice(index, 1);
+        this.objectIds.splice(index, 1);
         this.extra.splice(index, 1);
         
         // Update ID mappings - remove deleted ID and update shifted indices
@@ -63,6 +103,15 @@ export class ObjectManager {
         for (let i = index; i < this.ids.length; i++) {
             this.idToIndex.set(this.ids[i], i);
         }
+
+        // Update objectId mappings
+        this.objectIdToIndex.clear();
+        for (let i = 0; i < this.objectIds.length; i++) {
+            if (this.objectIds[i]) {
+                this.objectIdToIndex.set(this.objectIds[i], i);
+            }
+         }
+
     }
 
     updateObject(index, props) {
@@ -72,6 +121,7 @@ export class ObjectManager {
         if (props.height !== undefined) this.height[index] = props.height;
         if (props.color !== undefined) this.colors[index] = props.color;
         if (props.selected !== undefined) this.selected[index] = props.selected;
+        if (props.objectId !== undefined) this.setObjectId(index, props.objectId);
         if (props.label !== undefined) this.labels[index] = props.label;
         if (props.extra !== undefined) this.extra[index] = props.extra;
     }
@@ -164,6 +214,7 @@ export class ObjectManager {
                 h: this.height[i],
                 color: this.colors[i],
                 label: this.labels[i],
+                objectId: this.objectIds[i],
                 extra: this.extra[i] ?? null
             }))
         };
@@ -174,9 +225,20 @@ export class ObjectManager {
         for (const o of data.objects) {
             const { index } = this.createObject(o.type, o.x, o.y, o.w, o.h, o.color, o.mapType);
             this.labels[index] = o.label ?? '';
+            this.objectIds[index] = o.objectId ?? '';
             this.extra[index] = o.extra ?? null;
         }
+
+        // Rebuild objectId mappings after loading
+        this.objectIdToIndex.clear();
+        for (let i = 0; i < this.objectIds.length; i++) {
+            if (this.objectIds[i]) {
+                this.objectIdToIndex.set(this.objectIds[i], i);
+             }
+         }
     }
+
+    
 
     clear() {
         // Clear all arrays and mappings
@@ -190,6 +252,8 @@ export class ObjectManager {
         this.colors.length = 0;
         this.selected.length = 0;
         this.labels.length = 0;
+        this.objectIds.length = 0;
+        this.objectIdToIndex.clear();
         this.extra.length = 0;
         this.nextId = 0;
         this.idToIndex.clear();
