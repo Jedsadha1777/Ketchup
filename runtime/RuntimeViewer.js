@@ -32,6 +32,12 @@ export class RuntimeViewer extends CanvasEngine {
             backgroundColor: options.backgroundColor || '#f5f5f5',
             ...options
         };
+
+        this.visibility = {
+            corridors: true,
+            walls: true,
+            waypoints: true
+        };
         
         // Core systems (optimized for runtime)
         this.objects = new ObjectManager();
@@ -123,6 +129,10 @@ export class RuntimeViewer extends CanvasEngine {
                 if (index === undefined) return null;
                 return this.getObjectData(index);
             },
+
+            setVisibility: this.setVisibility.bind(this),
+            getVisibility: this.getVisibility.bind(this),
+
             
             // Property access (optimized)
             getProperty: (objectId, property) => {
@@ -261,9 +271,27 @@ export class RuntimeViewer extends CanvasEngine {
         return -1;
     }
 
+    setVisibility(type, visible) {
+        if (this.visibility.hasOwnProperty(type)) {
+            this.visibility[type] = visible;
+            this.render();
+        }
+    }
+
+    getVisibility(type) {
+        return this.visibility[type] || false;
+    }
+
     // Override drawContent for runtime
     drawContent() {
         for (let i = 0; i < this.objects.getObjectCount(); i++) {
+            const mapType = this.objects.mapTypes[i];
+            
+            // ตรวจสอบ visibility setting
+            if (mapType === 'corridor' && !this.visibility.corridors) continue;
+            if (mapType === 'wall' && !this.visibility.walls) continue;
+            if (mapType === 'waypoint' && !this.visibility.waypoints) continue;
+            
             this.drawObject(i);
         }
     }
