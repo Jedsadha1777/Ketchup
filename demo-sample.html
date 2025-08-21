@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runtime Map Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a1a; color: white; }
+        
+        .container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: #2a2a2a;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+        }
+        
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .stats {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .canvas-area {
+            flex: 1;
+            position: relative;
+            background: #f5f5f5;
+        }
+        
+        .controls {
+            background: #2a2a2a;
+            padding: 16px 20px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            border-top: 1px solid #333;
+        }
+        
+        .btn {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #0080ff;
+        }
+        
+        .btn:active {
+            transform: translateY(1px);
+        }
+        
+
+        
+        .log {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(10px);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-width: 350px;
+            max-height: 160px;
+            overflow-y: auto;
+            font-family: 'SF Mono', Monaco, monospace;
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+        
+        .log:empty {
+            opacity: 0;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+        
+        #runtime-canvas {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">Runtime Map Viewer</div>
+            <div class="stats">
+                Objects: <span id="object-count">0</span> • 
+                Events: <span id="events-status">Disabled</span>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <canvas id="runtime-canvas"></canvas>
+            <div class="log" id="event-log"></div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="loadSampleMap()">Load Sample</button>
+            <button class="btn" onclick="moveObjects()">Move Objects</button>
+            <button class="btn" onclick="changeColors()">Change Colors</button>
+            <button class="btn" onclick="animateObjects()">Animate Objects</button>
+            <button class="btn" onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { RuntimeViewer } from './runtime/RuntimeViewer.js';
+
+        let viewer = null;
+        let moveCounter = 0;
+        let isAnimating = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('runtime-canvas');
+            
+            viewer = new RuntimeViewer(canvas, {
+                showGrid: true,
+                enableEvents: true,
+                enableInteraction: true,
+                backgroundColor: '#f5f5f5'
+            });
+
+            setupEventListeners();
+            window.viewer = viewer;
+            updateInfo();
+            log('Runtime viewer initialized');
+        });
+
+        function setupEventListeners() {
+            viewer.on('mapLoaded', (data) => {
+                updateInfo();
+                log(`Map loaded: ${data.objectCount} objects`);
+            });
+
+            viewer.on('objectClick', (data) => {
+                log(`Clicked: ${data.objectId || 'object'} at (${Math.round(data.position.x)}, ${Math.round(data.position.y)})`);
+            });
+
+            viewer.on('objectHover', (data) => {
+                if (data.objectId) {
+                    document.title = `Runtime Viewer - ${data.objectId}`;
+                }
+            });
+        }
+
+        function updateInfo() {
+            const info = viewer.getRuntimeInfo();
+            document.getElementById('object-count').textContent = info.objectCount;
+            document.getElementById('events-status').textContent = info.eventSystemEnabled ? 'Enabled' : 'Disabled';
+        }
+
+        function log(message) {
+            const logElement = document.getElementById('event-log');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${time}] ${message}`;
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+            
+            // Keep only last 20 entries
+            while (logElement.children.length > 20) {
+                logElement.removeChild(logElement.firstChild);
+            }
+        }
+
+        window.loadSampleMap = function() {
+            const sampleData = {
+                version: 1,
+                objects: [
+                    { id: 0, type: 'rectangle', mapType: 'wall', x: 100, y: 100, w: 200, h: 40, color: '#2c3e50', label: 'Main Wall', objectId: 'wall1', extra: null },
+                    { id: 1, type: 'rectangle', mapType: 'room', x: 150, y: 180, w: 250, h: 150, color: '#3498db', label: 'Living Room', objectId: 'room1', extra: null },
+                    { id: 2, type: 'circle', mapType: 'waypoint', x: 260, y: 240, w: 20, h: 20, color: '#e74c3c', label: 'Start Point', objectId: 'spawn', extra: null },
+                    { id: 3, type: 'text', mapType: null, x: 180, y: 50, w: 140, h: 30, color: '#000', label: '', objectId: 'title', extra: { text: 'Sample Map', fontSize: 18, fontFamily: 'Arial' } }
+                ]
+            };
+            viewer.loadMapData(sampleData);
+        };
+
+
+
+        window.moveObjects = function() {
+            if (!viewer.objects || viewer.objects.getObjectCount() === 0) {
+                log('No objects to move');
+                return;
+            }
+
+            moveCounter++;
+            const offset = moveCounter * 20;
+
+            // Move all objects
+            for (let i = 0; i < viewer.objects.getObjectCount(); i++) {
+                const objectId = viewer.objects.getObjectId(i);
+                if (objectId) {
+                    const currentX = viewer.api.getProperty(objectId, 'x') || 0;
+                    viewer.api.setProperty(objectId, 'x', currentX + 10);
+                }
+            }
+            
+            log(`Moved all objects (step ${moveCounter})`);
+        };
+
+        window.changeColors = function() {
+            if (!viewer.objects || viewer.objects.getObjectCount() === 0) {
+                log('No objects to color');
+                return;
+            }
+
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#34495e', '#e67e22'];
+            
+            // Change object colors
+            for (let i = 0; i < viewer.objects.getObjectCount(); i++) {
+                const objectId = viewer.objects.getObjectId(i);
+                if (objectId) {
+                    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+                    viewer.api.setProperty(objectId, 'color', randomColor);
+                }
+            }
+            
+            log('Changed text colors');
+        };
+
+        window.animateObjects = function() {
+            if (!viewer.objects || viewer.objects.getObjectCount() === 0) {
+                log('No objects to animate');
+                return;
+            }
+
+            if (isAnimating) {
+                isAnimating = false;
+                log('Animation stopped');
+                return;
+            }
+
+            isAnimating = true;
+            log('Animation started');
+
+            // Store original positions
+            const originalPositions = [];
+            for (let i = 0; i < viewer.objects.getObjectCount(); i++) {
+                const objectId = viewer.objects.getObjectId(i);
+                if (objectId) {
+                    originalPositions.push({
+                        id: objectId,
+                        x: viewer.api.getProperty(objectId, 'x') || 0,
+                        y: viewer.api.getProperty(objectId, 'y') || 0
+                    });
+                }
+            }
+
+            let animationTime = 0;
+            const animationDuration = 3000; // 3 seconds
+
+            function animate() {
+                if (!isAnimating) return;
+
+                animationTime += 16; // ~60fps
+                const progress = Math.min(animationTime / animationDuration, 1);
+
+                // Circular motion animation
+                const radius = 50;
+                const angle = progress * Math.PI * 4; // 2 full circles
+
+                for (let i = 0; i < originalPositions.length; i++) {
+                    const obj = originalPositions[i];
+                    const offsetX = Math.cos(angle + i * 0.5) * radius;
+                    const offsetY = Math.sin(angle + i * 0.5) * radius;
+
+                    viewer.api.setProperty(obj.id, 'x', obj.x + offsetX);
+                    viewer.api.setProperty(obj.id, 'y', obj.y + offsetY);
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Reset to original positions
+                    for (const obj of originalPositions) {
+                        viewer.api.setProperty(obj.id, 'x', obj.x);
+                        viewer.api.setProperty(obj.id, 'y', obj.y);
+                    }
+                    isAnimating = false;
+                    log('Animation completed');
+                }
+            }
+
+            requestAnimationFrame(animate);
+        };
+
+
+
+        window.clearLog = function() {
+            document.getElementById('event-log').innerHTML = '';
+        };
+    </script>
+</body>
+</html>

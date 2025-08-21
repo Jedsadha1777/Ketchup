@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Orthogonal Pathfinding Demo</title>
+   <style>
+       * {
+           margin: 0;
+           padding: 0;
+           box-sizing: border-box;
+       }
+
+       body {
+           font-family: Arial, sans-serif;
+           background: #1a1a1a;
+           overflow: hidden;
+       }
+
+       .container {
+           width: 100vw;
+           height: 100vh;
+           position: relative;
+           background: #1e1e1e;
+       }
+
+       .controls {
+           position: absolute;
+           bottom: 20px;
+           left: 20px;
+           background: rgba(0, 0, 0, 0.9);
+           color: white;
+           padding: 20px;
+           border-radius: 8px;
+           z-index: 100;
+       }
+
+       .controls button {
+           background: #0066cc;
+           color: white;
+           border: none;
+           padding: 8px 12px;
+           border-radius: 4px;
+           margin: 3px;
+           cursor: pointer;
+           font-size: 11px;
+       }
+
+       .controls button:hover {
+           background: #0088ff;
+       }
+
+       .controls input[type="file"] {
+           margin: 10px 0;
+           padding: 8px;
+           background: white;
+           border: 1px solid #ccc;
+           border-radius: 4px;
+           width: 100%;
+       }
+
+       #runtime-canvas {
+           position: absolute !important;
+           top: 0 !important;
+           left: 0 !important;
+           z-index: 1 !important;
+           background: #f8f9fa !important;
+       }
+
+       .info {
+           position: absolute;
+           top: 20px;
+           right: 20px;
+           background: rgba(0, 0, 0, 0.9);
+           color: white;
+           padding: 15px;
+           border-radius: 8px;
+           font-size: 12px;
+       }
+   </style>
+</head>
+
+<body>
+   <div class="container">
+       <canvas id="runtime-canvas"></canvas>
+
+       <div class="controls">
+            <h3>Orthogonal Pathfinding</h3>
+            <input type="file" id="file-input" accept=".json">
+            <button onclick="loadFile()">Load JSON</button>
+
+            <div style="margin: 10px 0;">
+                <label style="color: white; display: block; margin-bottom: 4px;">From Waypoint:</label>
+                <select id="from-waypoint" style="width: 100%; padding: 4px;">
+                    <option value="">Select waypoint...</option>
+                </select>
+            </div>
+
+            <div style="margin: 10px 0;">
+                <label style="color: white; display: block; margin-bottom: 4px;">To Waypoint:</label>
+                <select id="to-waypoint" style="width: 100%; padding: 4px;">
+                    <option value="">Select waypoint...</option>
+                </select>
+            </div>
+
+            <button onclick="findPaths()">Find Path</button>
+            <button onclick="clearPaths()">Clear</button>
+            <button onclick="toggleDebug()">Debug</button>
+            <button onclick="loadSample()">Sample</button>
+
+            <div style="margin: 10px 0; padding-top: 10px; border-top: 1px solid #555;">
+               <div style="color: #aaa; font-size: 10px;">
+                    Right-click & drag or Ctrl+drag to pan
+               </div>
+            </div>
+
+            <!-- Toggle visibility controls -->
+            <!-- <div style="margin: 10px 0; border-top: 1px solid #555; padding-top: 10px;"> -->
+                <label style="color: white; display: block; margin-bottom: 8px; font-size: 12px;">Visibility:</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                    <label style="color: white; font-size: 11px; display: flex; align-items: center;">
+                        <input type="checkbox" id="show-corridors" checked style="margin-right: 4px;">
+                        Corridors
+                    </label>
+                    <label style="color: white; font-size: 11px; display: flex; align-items: center;">
+                        <input type="checkbox" id="show-walls" checked style="margin-right: 4px;">
+                        Walls
+                    </label>
+                    <label style="color: white; font-size: 11px; display: flex; align-items: center;">
+                        <input type="checkbox" id="show-waypoints" checked style="margin-right: 4px;">
+                        Waypoints
+                    </label>
+                     <label style="color: white; font-size: 11px; display: flex; align-items: center;">
+                       <input type="checkbox" id="show-images" checked style="margin-right: 4px;">
+                       Images
+                   </label>
+                </div>
+            <!-- </div> -->
+
+            <div style="margin-top: 10px;">
+                <label style="display: block; color: white; margin-bottom: 4px;">Object Size:</label>
+                <input type="range" id="object-size" min="1" max="40" value="5" style="width: 100%;">
+                <span id="size-value" style="color: white; font-size: 10px;">5px</span>
+            </div>
+        </div>
+
+       <div class="info">
+           <div>Corridors: <span id="corridor-count">0</span></div>
+           <div>Walls: <span id="wall-count">0</span></div>
+           <div>Waypoints: <span id="waypoint-count">0</span></div>
+           <div>Paths: <span id="path-count">0</span></div>
+           <div>Object Size: <span id="current-size">5</span>px</div>
+           <div>Min Corridor: <span id="min-corridor">0</span>px</div>
+           <div>Zoom: <span id="zoom-level">100%</span></div>
+       </div>
+   </div>
+
+   <script type="module">
+       import { RuntimeViewer } from './runtime/RuntimeViewer.js';
+
+       // =============================================================================
+       // GLOBAL VARIABLES
+       // =============================================================================
+       let viewer = null;
+       let corridors = [];
+       let walls = [];
+       let waypoints = [];
+       let paths = [];
+       let gridSize = 5;
+       let objectSize = 5;
+       let showDebug = false;
+       let showCorridors = true;
+       let showWalls = true;
+       let showWaypoints = true;
+       let isPanning = false;
+       let lastPanX = 0;
+       let lastPanY = 0;
+
+       // =============================================================================
+       // INITIALIZATION
+       // =============================================================================
+       document.addEventListener('DOMContentLoaded', () => {
+           initViewer();
+           setupEventHandlers();
+           updateInfo();
+       });
+
+       function initViewer() {
+           const canvas = document.getElementById('runtime-canvas');
+           viewer = new RuntimeViewer(canvas, {
+               showGrid: false,
+               enableEvents: true,
+               enableInteraction: true
+           });
+
+           // เก็บ visibility checkbox 
+           viewer.visibilityState = {
+               corridors: true,
+               walls: true,
+              waypoints: true,
+              images: true
+           };
+
+           viewer.setVisibility = function(type, visible) {
+
+                this.visibilityState[type] = visible;
+
+                const objects = this.objects;
+                for (let i = 0; i < objects.getObjectCount(); i++) {
+                    const mapType = objects.mapTypes[i];
+                    const objType = objects.types[i];                    
+                  
+                    let shouldHide = false;
+                    if (mapType === 'corridor' && !this.visibilityState.corridors) shouldHide = true;
+                    if (mapType === 'wall' && !this.visibilityState.walls) shouldHide = true;
+                    if (mapType === 'waypoint' && !this.visibilityState.waypoints) shouldHide = true;
+                    if ((objType === 'image' || objType === 'text') && !this.visibilityState.images) shouldHide = true;
+                    
+                    // ซ่อนโดยการย้ายออกนอกหน้าจอ
+                    if (shouldHide) {
+                        if (!objects.originalPositions) objects.originalPositions = {};
+                        if (!objects.originalPositions[i]) {
+                            objects.originalPositions[i] = {
+                                x: objects.x[i],
+                                y: objects.y[i]
+                            };
+                        }
+                        objects.x[i] = -99999;
+                        objects.y[i] = -99999;
+                    } else {
+                        // คืนตำแหน่งเดิม
+                        if (objects.originalPositions && objects.originalPositions[i]) {
+                            objects.x[i] = objects.originalPositions[i].x;
+                            objects.y[i] = objects.originalPositions[i].y;
+                        }
+                    }
+                }
+                this.render();
+            };
+
+           const originalRender = viewer.render.bind(viewer);
+           viewer.render = function() {
+               originalRender();
+               if (paths.length > 0) drawPaths();
+               if (showDebug) drawCorridorBuffers();
+           };
+
+           window.viewer = viewer;
+       }
+
+       function setupEventHandlers() {
+           const canvas = document.getElementById('runtime-canvas');
+           
+           canvas.addEventListener('wheel', (e) => setTimeout(() => viewer.render(), 10));
+           canvas.addEventListener('mousedown', handlePanStart);
+           canvas.addEventListener('mousemove', handlePanMove);
+           canvas.addEventListener('mouseup', handlePanEnd);
+           canvas.addEventListener('mouseleave', handlePanEnd);
+           canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+           const sizeSlider = document.getElementById('object-size');
+           const sizeValue = document.getElementById('size-value');
+           sizeSlider.addEventListener('input', () => {
+               objectSize = parseInt(sizeSlider.value);
+               sizeValue.textContent = objectSize + 'px';
+               updateInfo();
+               if (paths.length > 0) findPaths();
+           });
+
+           const redrawHandler = () => {
+               viewer.render();
+               updateInfo();
+           };
+
+           // initial visibility state
+           showCorridors = document.getElementById('show-corridors').checked;
+           showWalls = document.getElementById('show-walls').checked;
+           showWaypoints = document.getElementById('show-waypoints').checked;
+           let showImages = document.getElementById('show-images').checked;
+
+           document.getElementById('show-corridors').addEventListener('change', (e) => {
+               showCorridors = e.target.checked;
+               viewer.setVisibility('corridors', showCorridors);
+               redrawHandler();
+           });
+
+           document.getElementById('show-walls').addEventListener('change', (e) => {
+               showWalls = e.target.checked;
+               viewer.setVisibility('walls', showWalls);
+               redrawHandler();
+           });
+
+           document.getElementById('show-waypoints').addEventListener('change', (e) => {
+               showWaypoints = e.target.checked;
+               viewer.setVisibility('waypoints', showWaypoints);
+               redrawHandler();
+           });
+
+            document.getElementById('show-images').addEventListener('change', (e) => {
+               showImages = e.target.checked;
+               viewer.setVisibility('images', showImages);
+               redrawHandler();
+           });
+       }
+
+       // =============================================================================
+       // PAN HANDLING
+       // =============================================================================
+       function handlePanStart(e) {
+           if (e.button === 2 || e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
+               e.preventDefault();
+               isPanning = true;
+               lastPanX = e.clientX;
+               lastPanY = e.clientY;
+               e.target.style.cursor = 'grabbing';
+           }
+       }
+
+       function handlePanMove(e) {
+           if (!isPanning) {
+               e.target.style.cursor = (e.ctrlKey || e.metaKey) ? 'grab' : 'default';
+               return;
+           }
+
+           e.preventDefault();
+           const deltaX = e.clientX - lastPanX;
+           const deltaY = e.clientY - lastPanY;
+           
+           viewer.panX += deltaX;
+           viewer.panY += deltaY;
+           lastPanX = e.clientX;
+           lastPanY = e.clientY;
+           viewer.render();
+       }
+
+       function handlePanEnd(e) {
+           if (isPanning) {
+               isPanning = false;
+               e.target.style.cursor = (e.ctrlKey || e.metaKey) ? 'grab' : 'default';
+           }
+       }
+
+       // =============================================================================
+       // PATHFINDING CLASS
+       // =============================================================================
+       class OrthogonalPathfinder {
+           constructor(corridors, walls, gridSize, objectSize = 20) {
+               this.corridors = corridors;
+               this.walls = walls;
+               this.gridSize = gridSize;
+               this.objectSize = objectSize;
+               this.createGrid();
+           }
+
+           createGrid() {
+               const bounds = this.getMapBounds();
+               const cols = Math.ceil(bounds.width / this.gridSize);
+               const rows = Math.ceil(bounds.height / this.gridSize);
+
+               this.grid = [];
+               this.minX = bounds.minX;
+               this.minY = bounds.minY;
+               this.cols = cols;
+               this.rows = rows;
+
+               for (let y = 0; y < rows; y++) {
+                   this.grid[y] = [];
+                   for (let x = 0; x < cols; x++) {
+                       const worldX = this.minX + x * this.gridSize + this.gridSize / 2;
+                       const worldY = this.minY + y * this.gridSize + this.gridSize / 2;
+                       const walkable = this.canPlaceObjectAt(worldX, worldY);
+
+                       this.grid[y][x] = {
+                           x, y, worldX, worldY, walkable,
+                           f: 0, g: 0, h: 0, parent: null
+                       };
+                   }
+               }
+
+               const walkableCount = this.grid.flat().filter(cell => cell.walkable).length;
+               console.log(`Walkable cells: ${walkableCount}/${cols * rows}`);
+           }
+
+           canPlaceObjectAt(centerX, centerY) {
+               if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
+
+               const halfSize = this.objectSize / 2;
+               if (this.objectSize < 5) {
+                   return this.corridors.some(corridor =>
+                       centerX >= corridor.x && centerX <= corridor.x + corridor.width &&
+                       centerY >= corridor.y && centerY <= corridor.y + corridor.height
+                   );
+               }
+
+               const corners = [
+                   { x: centerX - halfSize, y: centerY - halfSize },
+                   { x: centerX + halfSize, y: centerY - halfSize },
+                   { x: centerX - halfSize, y: centerY + halfSize },
+                   { x: centerX + halfSize, y: centerY + halfSize }
+               ];
+
+               return corners.every(corner =>
+                   this.corridors.some(corridor =>
+                       corner.x >= corridor.x && corner.x <= corridor.x + corridor.width &&
+                       corner.y >= corridor.y && corner.y <= corridor.y + corridor.height
+                   )
+               );
+           }
+
+           isPositionClearOfWalls(centerX, centerY) {
+               const halfSize = this.objectSize / 2;
+               const objectBounds = {
+                   left: centerX - halfSize,
+                   right: centerX + halfSize,
+                   top: centerY - halfSize,
+                   bottom: centerY + halfSize
+               };
+
+               return !this.walls.some(wall => {
+                   const wallBounds = {
+                       left: wall.x,
+                       right: wall.x + wall.width,
+                       top: wall.y,
+                       bottom: wall.y + wall.height
+                   };
+
+                   return objectBounds.left < wallBounds.right &&
+                          objectBounds.right > wallBounds.left &&
+                          objectBounds.top < wallBounds.bottom &&
+                          objectBounds.bottom > wallBounds.top;
+               });
+           }
+
+           getMapBounds() {
+               const allObjects = [...this.corridors, ...this.walls];
+               let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+               allObjects.forEach(obj => {
+                   minX = Math.min(minX, obj.x);
+                   minY = Math.min(minY, obj.y);
+                   maxX = Math.max(maxX, obj.x + obj.width);
+                   maxY = Math.max(maxY, obj.y + obj.height);
+               });
+
+               return {
+                   minX: minX - this.gridSize * 2,
+                   minY: minY - this.gridSize * 2,
+                   width: maxX - minX + this.gridSize * 4,
+                   height: maxY - minY + this.gridSize * 4
+               };
+           }
+
+           worldToGrid(worldX, worldY) {
+               return {
+                   x: Math.floor((worldX - this.minX + this.gridSize / 2) / this.gridSize),
+                   y: Math.floor((worldY - this.minY + this.gridSize / 2) / this.gridSize)
+               };
+           }
+
+           getNode(x, y) {
+               return (x >= 0 && x < this.cols && y >= 0 && y < this.rows) ? this.grid[y][x] : null;
+           }
+
+           getNeighbors(node) {
+               const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+               return dirs
+                   .map(([dx, dy]) => this.getNode(node.x + dx, node.y + dy))
+                   .filter(neighbor => neighbor && neighbor.walkable);
+           }
+
+           heuristic(a, b) {
+               return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+           }
+
+           findPath(startWorld, endWorld) {
+               if (!this.canPlaceObjectAt(startWorld.x, startWorld.y) ||
+                   !this.canPlaceObjectAt(endWorld.x, endWorld.y)) {
+                   console.log('Cannot place object at start or end waypoint');
+                   return null;
+               }
+
+               const start = this.worldToGrid(startWorld.x, startWorld.y);
+               const end = this.worldToGrid(endWorld.x, endWorld.y);
+               const startNode = this.getNode(start.x, start.y);
+               const endNode = this.getNode(end.x, end.y);
+
+               if (!startNode?.walkable || !endNode?.walkable) {
+                   console.log('Start or end node not walkable');
+                   return null;
+               }
+
+               this.grid.flat().forEach(node => {
+                   node.f = node.g = node.h = 0;
+                   node.parent = null;
+               });
+
+               const openSet = [startNode];
+               const closedSet = new Set();
+
+               startNode.g = 0;
+               startNode.h = this.heuristic(startNode, endNode);
+               startNode.f = startNode.h;
+
+               while (openSet.length > 0) {
+                   let current = openSet[0];
+                   let currentIndex = 0;
+
+                   for (let i = 1; i < openSet.length; i++) {
+                       if (openSet[i].f < current.f ||
+                           (openSet[i].f === current.f && openSet[i].h < current.h)) {
+                           current = openSet[i];
+                           currentIndex = i;
+                       }
+                   }
+
+                   openSet.splice(currentIndex, 1);
+                   closedSet.add(current);
+
+                   if (current === endNode) {
+                       const path = [];
+                       let temp = current;
+                       while (temp) {
+                           path.push({ x: temp.worldX, y: temp.worldY });
+                           temp = temp.parent;
+                       }
+                       return this.optimizePath(path.reverse());
+                   }
+
+                   this.getNeighbors(current).forEach(neighbor => {
+                       if (closedSet.has(neighbor)) return;
+
+                       let moveCost = 1;
+                       const toEndX = endNode.x - current.x;
+                       const toEndY = endNode.y - current.y;
+                       const moveX = neighbor.x - current.x;
+                       const moveY = neighbor.y - current.y;
+
+                       if ((toEndX > 0 && moveX > 0) || (toEndX < 0 && moveX < 0) ||
+                           (toEndY > 0 && moveY > 0) || (toEndY < 0 && moveY < 0)) {
+                           moveCost = 0.99;
+                       }
+
+                       const tentativeG = current.g + moveCost;
+
+                       if (!openSet.includes(neighbor)) {
+                           openSet.push(neighbor);
+                       } else if (tentativeG >= neighbor.g) {
+                           return;
+                       }
+
+                       neighbor.parent = current;
+                       neighbor.g = tentativeG;
+                       neighbor.h = this.heuristic(neighbor, endNode);
+                       neighbor.f = neighbor.g + neighbor.h;
+                   });
+               }
+
+               console.log('No path found');
+               return null;
+           }
+
+           optimizePath(path) {
+               if (path.length <= 2) return path;
+
+               const simplified = [path[0]];
+               for (let i = 1; i < path.length - 1; i++) {
+                   const prev = path[i - 1];
+                   const curr = path[i];
+                   const next = path[i + 1];
+
+                   const dir1 = {
+                       x: Math.sign(curr.x - prev.x),
+                       y: Math.sign(curr.y - prev.y)
+                   };
+                   const dir2 = {
+                       x: Math.sign(next.x - curr.x),
+                       y: Math.sign(next.y - curr.y)
+                   };
+
+                   if (dir1.x !== dir2.x || dir1.y !== dir2.y) {
+                       simplified.push(curr);
+                   }
+               }
+               simplified.push(path[path.length - 1]);
+               return simplified;
+           }
+       }
+
+       // =============================================================================
+       // DATA EXTRACTION AND MANAGEMENT
+       // =============================================================================
+       function extractCorridorsWallsAndWaypoints() {
+           corridors = [];
+           walls = [];
+           waypoints = [];
+
+           for (let i = 0; i < viewer.objects.getObjectCount(); i++) {
+               const mapType = viewer.objects.mapTypes[i];
+               const bounds = viewer.objects.getBounds(i);
+               const objectId = viewer.objects.getObjectId(i);
+
+               switch (mapType) {
+                   case 'corridor':
+                       corridors.push({ id: objectId, ...bounds });
+                       break;
+                   case 'wall':
+                       walls.push({ id: objectId, ...bounds });
+                       break;
+                   case 'waypoint':
+                       waypoints.push({
+                           id: objectId,
+                           x: bounds.x + bounds.width / 2,
+                           y: bounds.y + bounds.height / 2
+                       });
+                       break;
+               }
+           }
+
+           console.log(`Found ${corridors.length} corridors, ${walls.length} walls, ${waypoints.length} waypoints`);
+           updateWaypointDropdowns();
+       }
+
+       function updateWaypointDropdowns() {
+           const fromSelect = document.getElementById('from-waypoint');
+           const toSelect = document.getElementById('to-waypoint');
+
+           fromSelect.innerHTML = '<option value="">Select waypoint...</option>';
+           toSelect.innerHTML = '<option value="">Select waypoint...</option>';
+
+           waypoints.forEach(waypoint => {
+               ['from-waypoint', 'to-waypoint'].forEach(selectId => {
+                   const option = document.createElement('option');
+                   option.value = waypoint.id;
+                   option.textContent = waypoint.id || 'Unnamed';
+                   document.getElementById(selectId).appendChild(option);
+               });
+           });
+       }
+
+       function updateInfo() {
+           const updates = {
+               'corridor-count': corridors.length,
+               'wall-count': walls.length,
+               'waypoint-count': waypoints.length,
+               'path-count': paths.length,
+               'current-size': objectSize
+           };
+
+           Object.entries(updates).forEach(([id, value]) => {
+               document.getElementById(id).textContent = value;
+           });
+
+           if (corridors.length > 0) {
+               const minDimension = Math.min(...corridors.map(c => Math.min(c.width, c.height)));
+               document.getElementById('min-corridor').textContent = minDimension.toFixed(1);
+           }
+
+           const zoom = viewer ? Math.round(viewer.zoom * 100) : 100;
+           document.getElementById('zoom-level').textContent = zoom + '%';
+       }
+
+       // =============================================================================
+       // PATHFINDING UTILITIES
+       // =============================================================================
+       function findNearestCorridorPosition(waypoint) {
+            if (corridors.length === 0) return waypoint;
+
+            const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+            let nearestPos = waypoint;
+            let minDistance = Infinity;
+            const margin = objectSize + Math.max(objectSize * 0.5, objectSize * 0.3);
+
+            for (const corridor of corridors) {
+                // เช็คว่า corridor มีขนาดพอสำหรับ margin นี้ไหม
+                if (corridor.width < margin * 2 || corridor.height < margin * 2) {
+                   continue; // ข้าม corridor ที่เล็กเกินไป
+                }
+
+                // หาจุดบนขอบ corridor ที่ใกล้ waypoint ที่สุด
+                const edges = [
+                    { x: Math.max(corridor.x + margin, Math.min(corridor.x + corridor.width - margin, waypoint.x)), 
+                    y: corridor.y + margin }, // top edge
+                    { x: Math.max(corridor.x + margin, Math.min(corridor.x + corridor.width - margin, waypoint.x)), 
+                    y: corridor.y + corridor.height - margin }, // bottom edge
+                    { x: corridor.x + margin, 
+                    y: Math.max(corridor.y + margin, Math.min(corridor.y + corridor.height - margin, waypoint.y)) }, // left edge
+                    { x: corridor.x + corridor.width - margin, 
+                    y: Math.max(corridor.y + margin, Math.min(corridor.y + corridor.height - margin, waypoint.y)) } // right edge
+                ];
+
+                for (const edge of edges) {
+                    if (pathfinder.canPlaceObjectAt(edge.x, edge.y)) {
+                        const distance = Math.sqrt(
+                            Math.pow(waypoint.x - edge.x, 2) +
+                            Math.pow(waypoint.y - edge.y, 2)
+                        );
+
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestPos = edge;
+                        }
+                    }
+                }
+            }
+
+            return nearestPos;
+        }
+
+       // =============================================================================
+       // STRAIGHT LINE UTILITIES (REFACTORED FROM createAdjustmentPath)
+       // =============================================================================
+       function createStraightLinePath(original, adjusted) {
+           if (!original || !adjusted) return [];
+
+           const distance = Math.sqrt(
+               Math.pow(original.x - adjusted.x, 2) +
+               Math.pow(original.y - adjusted.y, 2)
+           );
+
+           if (distance <= 1) return [];
+
+           const deltaX = adjusted.x - original.x;
+           const deltaY = adjusted.y - original.y;
+           const sameX = Math.abs(deltaX) < 1;
+           const sameY = Math.abs(deltaY) < 1;
+
+           if (sameX && sameY) {
+               return [];
+           } else if (sameX || sameY) {
+               return !lineIntersectsWalls(original, adjusted) ? [original, adjusted] : [];
+           } else {
+               const midPoint1 = { x: adjusted.x, y: original.y };
+               const midPoint2 = { x: original.x, y: adjusted.y };
+               const path1Valid = !lineIntersectsWalls(original, midPoint1) && !lineIntersectsWalls(midPoint1, adjusted);
+               const path2Valid = !lineIntersectsWalls(original, midPoint2) && !lineIntersectsWalls(midPoint2, adjusted);
+
+               if (path1Valid && path2Valid) {
+                   const useHorizontalFirst = Math.abs(deltaX) >= Math.abs(deltaY);
+                   return useHorizontalFirst ? [original, midPoint1, adjusted] : [original, midPoint2, adjusted];
+               } else if (path1Valid) {
+                   return [original, midPoint1, adjusted];
+               } else if (path2Valid) {
+                   return [original, midPoint2, adjusted];
+               }
+           }
+
+           return [];
+       }
+
+       // =============================================================================
+       // RENDERING FUNCTIONS
+       // =============================================================================
+       function drawPaths() {
+           if (corridors.length === 0) return;
+
+           if (showDebug) drawCorridorBuffers();
+
+           const corridorCache = createCorridorCache();
+           const lineWidth = objectSize;
+
+           paths.forEach((path, index) => {
+               const hue = (index * 137.5) % 360;
+               const color = `hsl(${hue}, 70%, 50%)`;
+               drawPathWithCache(path.points, color, lineWidth, corridorCache);
+
+               if (path.fromOriginal && path.fromAdjusted) {
+                   drawAdjustmentIndicator(path.fromOriginal, path.fromAdjusted, color);
+               }
+               if (path.toOriginal && path.toAdjusted) {
+                   drawAdjustmentIndicator(path.toOriginal, path.toAdjusted, color);
+               }
+           });
+       }
+
+       function drawAdjustmentIndicator(original, adjusted, color) {
+           const ctx = viewer.ctx;
+           const distance = Math.sqrt(
+               Math.pow(original.x - adjusted.x, 2) +
+               Math.pow(original.y - adjusted.y, 2)
+           );
+
+           if (distance <= 1) return;
+
+           ctx.save();
+           ctx.scale(viewer.zoom, viewer.zoom);
+           ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
+
+
+           
+
+           ctx.strokeStyle = color;
+           ctx.lineWidth = 2 / viewer.zoom;
+           ctx.setLineDash([3 / viewer.zoom, 3 / viewer.zoom]);
+           
+           // Use refactored straight line logic
+           const linePath = createStraightLinePath(original, adjusted);
+           
+           if (linePath.length > 1) {
+               ctx.beginPath();
+               ctx.moveTo(linePath[0].x, linePath[0].y);
+               for (let i = 1; i < linePath.length; i++) {
+                   ctx.lineTo(linePath[i].x, linePath[i].y);
+               }
+               ctx.stroke();
+           }
+
+           ctx.setLineDash([]);
+
+           // Draw start and end points
+           ctx.fillStyle = color;
+           ctx.strokeStyle = color;
+           ctx.lineWidth = 1 / viewer.zoom;
+           
+           ctx.beginPath();
+           ctx.arc(original.x, original.y, 3 / viewer.zoom, 0, Math.PI * 2);
+           ctx.stroke();
+           
+           ctx.beginPath();
+           ctx.arc(adjusted.x, adjusted.y, 3 / viewer.zoom, 0, Math.PI * 2);
+           ctx.fill();
+
+           ctx.restore();
+       }
+
+       function drawPathWithCache(points, color, lineWidth, corridorCache) {
+           if (points.length < 2) return;
+
+           const ctx = viewer.ctx;
+           const { canvas: cacheCanvas, bounds } = corridorCache;
+
+           ctx.save();
+
+           const pathCanvas = document.createElement('canvas');
+           pathCanvas.width = cacheCanvas.width;
+           pathCanvas.height = cacheCanvas.height;
+           const pathCtx = pathCanvas.getContext('2d');
+
+           pathCtx.strokeStyle = '#ffffff';
+           pathCtx.lineWidth = lineWidth;
+           pathCtx.lineCap = 'round';
+           pathCtx.lineJoin = 'round';
+
+           pathCtx.beginPath();
+           pathCtx.moveTo(points[0].x - bounds.minX, points[0].y - bounds.minY);
+
+           for (let i = 1; i < points.length; i++) {
+               const prevPoint = points[i - 1];
+               const currentPoint = points[i];
+               
+               if (!lineIntersectsWalls(prevPoint, currentPoint)) {
+                   pathCtx.lineTo(currentPoint.x - bounds.minX, currentPoint.y - bounds.minY);
+               } else {
+                   pathCtx.moveTo(currentPoint.x - bounds.minX, currentPoint.y - bounds.minY);
+               }
+           }
+
+           pathCtx.stroke();
+
+           const resultCanvas = document.createElement('canvas');
+          resultCanvas.width = cacheCanvas.width;
+          resultCanvas.height = cacheCanvas.height;
+          const resultCtx = resultCanvas.getContext('2d');
+
+          resultCtx.drawImage(pathCanvas, 0, 0);
+          resultCtx.globalCompositeOperation = 'source-in';
+          resultCtx.drawImage(cacheCanvas, 0, 0);
+          resultCtx.globalCompositeOperation = 'source-atop';
+          resultCtx.fillStyle = color;
+          resultCtx.fillRect(0, 0, resultCanvas.width, resultCanvas.height);
+
+          ctx.scale(viewer.zoom, viewer.zoom);
+          ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
+
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.drawImage(resultCanvas, bounds.minX, bounds.minY);
+
+          ctx.fillStyle = color;
+          const markerSize = lineWidth / viewer.zoom / 2;
+          ctx.fillRect(points[0].x - markerSize, points[0].y - markerSize, markerSize * 2, markerSize * 2);
+          ctx.fillRect(points[points.length - 1].x - markerSize, points[points.length - 1].y - markerSize, markerSize * 2, markerSize * 2);
+
+          ctx.restore();
+      }
+
+      function createCorridorCache() {
+          const canvas = document.createElement('canvas');
+          const bounds = getMapBounds();
+
+          const padding = 50;
+          canvas.width = bounds.width + padding * 2;
+          canvas.height = bounds.height + padding * 2;
+          const ctx = canvas.getContext('2d');
+
+          bounds.minX -= padding;
+          bounds.minY -= padding;
+          bounds.width += padding * 2;
+          bounds.height += padding * 2;
+
+          ctx.fillStyle = '#ffffff';
+          corridors.forEach(corridor => {
+              const x = corridor.x - bounds.minX;
+              const y = corridor.y - bounds.minY;
+              ctx.fillRect(x, y, corridor.width, corridor.height);
+          });
+
+          ctx.fillStyle = '#000000';
+          walls.forEach(wall => {
+              const x = wall.x - bounds.minX;
+              const y = wall.y - bounds.minY;
+              ctx.fillRect(x, y, wall.width, wall.height);
+          });
+
+          return { canvas, bounds };
+      }
+
+      function getMapBounds() {
+          const allObjects = [...corridors, ...walls];
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+          allObjects.forEach(obj => {
+              minX = Math.min(minX, obj.x);
+              minY = Math.min(minY, obj.y);
+              maxX = Math.max(maxX, obj.x + obj.width);
+              maxY = Math.max(maxY, obj.y + obj.height);
+          });
+
+          return { minX, minY, width: maxX - minX, height: maxY - minY };
+      }
+
+      function drawCorridorBuffers() {
+          const ctx = viewer.ctx;
+          const halfSize = objectSize / 2;
+
+          ctx.save();
+          ctx.scale(viewer.zoom, viewer.zoom);
+          ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
+
+          if (showCorridors) {
+              ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+              corridors.forEach(corridor => {
+                  ctx.fillRect(corridor.x, corridor.y, corridor.width, corridor.height);
+              });
+
+              ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+              ctx.beginPath();
+              corridors.forEach(corridor => {
+                  const safeLeft = corridor.x + halfSize;
+                  const safeTop = corridor.y + halfSize;
+                  const safeWidth = corridor.width - objectSize;
+                  const safeHeight = corridor.height - objectSize;
+
+                  if (safeWidth > 0 && safeHeight > 0) {
+                      ctx.rect(safeLeft, safeTop, safeWidth, safeHeight);
+                  }
+              });
+              ctx.fill();
+
+              const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+              ctx.fillStyle = 'rgba(0, 0, 255, 1)';
+
+              for (let y = 0; y < pathfinder.rows; y++) {
+                  for (let x = 0; x < pathfinder.cols; x++) {
+                      if (pathfinder.grid[y][x].walkable) {
+                          const worldX = pathfinder.grid[y][x].worldX;
+                          const worldY = pathfinder.grid[y][x].worldY;
+                          ctx.beginPath();
+                          ctx.arc(worldX, worldY, 2 / viewer.zoom, 0, Math.PI * 2);
+                          ctx.fill();
+                      }
+                  }
+              }
+          }
+
+          if (showWalls) {
+              ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+              walls.forEach(wall => {
+                  ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+              });
+          }
+
+          if (showWaypoints) {
+              const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+              ctx.lineWidth = 1 / viewer.zoom;
+
+              waypoints.forEach(waypoint => {
+                  const canPlace = pathfinder.canPlaceObjectAt(waypoint.x, waypoint.y);
+
+                  ctx.fillStyle = canPlace ? 'rgba(100, 255, 100, 0.6)' : 'rgba(255, 100, 100, 0.8)';
+                  ctx.strokeStyle = canPlace ? 'rgba(0, 255, 0, 1)' : 'rgba(255, 0, 0, 1)';
+
+                  ctx.fillRect(waypoint.x - halfSize, waypoint.y - halfSize, objectSize, objectSize);
+                  ctx.strokeRect(waypoint.x - halfSize, waypoint.y - halfSize, objectSize, objectSize);
+
+                  if (!canPlace) {
+                      ctx.strokeStyle = 'white';
+                      ctx.lineWidth = 3 / viewer.zoom;
+                      ctx.beginPath();
+                      ctx.moveTo(waypoint.x - halfSize + 2, waypoint.y - halfSize + 2);
+                      ctx.lineTo(waypoint.x + halfSize - 2, waypoint.y + halfSize - 2);
+                      ctx.moveTo(waypoint.x + halfSize - 2, waypoint.y - halfSize + 2);
+                      ctx.lineTo(waypoint.x - halfSize + 2, waypoint.y + halfSize - 2);
+                      ctx.stroke();
+                  }
+
+                  ctx.fillStyle = 'rgba(255, 0, 0, 1)';
+                  ctx.beginPath();
+                  ctx.arc(waypoint.x, waypoint.y, 3 / viewer.zoom, 0, Math.PI * 2);
+                  ctx.fill();
+
+                  ctx.fillStyle = 'black';
+                  ctx.font = `${12 / viewer.zoom}px Arial`;
+                  ctx.fillText(waypoint.id + (canPlace ? '' : ' ✗'), waypoint.x + halfSize + 5, waypoint.y - halfSize - 5);
+              });
+          }
+
+          ctx.restore();
+      }
+
+      // =============================================================================
+      // COLLISION DETECTION
+      // =============================================================================
+      function lineIntersectsWalls(point1, point2) {
+          const samples = 20;
+          for (let i = 0; i <= samples; i++) {
+              const t = i / samples;
+              const checkX = point1.x + (point2.x - point1.x) * t;
+              const checkY = point1.y + (point2.y - point1.y) * t;
+
+              if (walls.some(wall =>
+                  checkX >= wall.x && checkX <= wall.x + wall.width &&
+                  checkY >= wall.y && checkY <= wall.y + wall.height
+              )) {
+                  return true;
+              }
+          }
+          return false;
+      }
+
+      // =============================================================================
+      // PUBLIC API FUNCTIONS
+      // =============================================================================
+      window.loadFile = function () {
+          const fileInput = document.getElementById('file-input');
+          const file = fileInput.files[0];
+
+          if (!file) {
+              alert('Please select a JSON file');
+              return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = function (e) {
+              try {
+                  const mapData = JSON.parse(e.target.result);
+                  viewer.loadMapData(mapData);
+                  extractCorridorsWallsAndWaypoints();
+
+                  // visibility ตาม checkbox state
+                  viewer.setVisibility('corridors', document.getElementById('show-corridors').checked);
+                  viewer.setVisibility('walls', document.getElementById('show-walls').checked);
+                  viewer.setVisibility('waypoints', document.getElementById('show-waypoints').checked);
+                  viewer.setVisibility('images', document.getElementById('show-images').checked);
+                  updateInfo();
+              } catch (error) {
+                  alert('Error loading JSON: ' + error.message);
+              }
+          };
+          reader.readAsText(file);
+      };
+
+      window.loadSample = function () {
+          const sampleData = {
+              version: 1,
+              objects: [
+                  { id: 1, type: "rectangle", mapType: "corridor", x: 200, y: 100, w: 400, h: 20, color: "#f39c12", label: "", objectId: "main_corridor", extra: null },
+                  { id: 2, type: "rectangle", mapType: "corridor", x: 200, y: 100, w: 20, h: 200, color: "#f39c12", label: "", objectId: "side_corridor", extra: null },
+                  { id: 3, type: "circle", mapType: "waypoint", x: 250, y: 100, w: 16, h: 16, color: "#e74c3c", label: "", objectId: "start", extra: null },
+                  { id: 4, type: "circle", mapType: "waypoint", x: 550, y: 100, w: 16, h: 16, color: "#e74c3c", label: "", objectId: "end", extra: null },
+                  { id: 5, type: "rectangle", mapType: "wall", x: 300, y: 80, w: 100, h: 20, color: "#2c3e50", label: "", objectId: "wall1", extra: null }
+              ]
+          };
+
+          viewer.loadMapData(sampleData);
+          extractCorridorsWallsAndWaypoints();
+          updateInfo();
+      };
+
+      window.findPaths = function () {
+          if (corridors.length === 0) {
+              alert('Need corridors to find paths');
+              return;
+          }
+
+          const fromWaypointId = document.getElementById('from-waypoint').value;
+          const toWaypointId = document.getElementById('to-waypoint').value;
+
+          if (!fromWaypointId || !toWaypointId || fromWaypointId === toWaypointId) {
+              alert('Please select different source and destination waypoints');
+              return;
+          }
+
+          console.log(`Finding path with object size: ${objectSize}`);
+          paths = [];
+          viewer.render();
+
+          const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+          const fromWaypoint = waypoints.find(w => w.id === fromWaypointId);
+          const toWaypoint = waypoints.find(w => w.id === toWaypointId);
+
+          if (!fromWaypoint || !toWaypoint) {
+              alert('Selected waypoints not found');
+              return;
+          }
+
+          const fromPos = pathfinder.canPlaceObjectAt(fromWaypoint.x, fromWaypoint.y)
+              ? fromWaypoint
+              : findNearestCorridorPosition(fromWaypoint);
+
+          const toPos = pathfinder.canPlaceObjectAt(toWaypoint.x, toWaypoint.y)
+              ? toWaypoint
+              : findNearestCorridorPosition(toWaypoint);
+
+          const path = pathfinder.findPath(fromPos, toPos);
+          if (path) {
+              paths.push({
+                  from: fromWaypointId,
+                  to: toWaypointId,
+                  points: path,
+                  fromOriginal: fromWaypoint,
+                  toOriginal: toWaypoint,
+                  fromAdjusted: fromPos,
+                  toAdjusted: toPos
+              });
+
+              console.log(`Found path from ${fromWaypointId} to ${toWaypointId}`);
+          } else {
+              alert(`No path found from ${fromWaypointId} to ${toWaypointId}`);
+          }
+
+          viewer.render();
+      };
+
+      window.clearPaths = function () {
+          paths = [];
+          showDebug = false;
+          document.getElementById('from-waypoint').value = '';
+          document.getElementById('to-waypoint').value = '';
+          viewer.render();
+          updateInfo();
+      };
+
+      window.toggleDebug = function () {
+          showDebug = !showDebug;
+          viewer.render();
+      };
+
+      setInterval(() => {
+          if (viewer) {
+              const zoom = Math.round(viewer.zoom * 100);
+              const currentZoom = document.getElementById('zoom-level').textContent;
+              if (currentZoom !== zoom + '%') {
+                  updateInfo();
+              }
+          }
+      }, 100);
+  </script>
+</body>
+</html>
