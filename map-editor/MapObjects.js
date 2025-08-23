@@ -2,7 +2,8 @@ export const MAP_OBJECT_TYPES = {
     WALL: 'wall',
     CORRIDOR: 'corridor', 
     ROOM: 'room',
-    WAYPOINT: 'waypoint'
+    WAYPOINT: 'waypoint',
+    warppoint: 'warppoint'
 };
 
 export const MAP_OBJECT_STYLES = {
@@ -30,5 +31,12 @@ export const MAP_OBJECT_STYLES = {
         strokeWidth: 2,
         opacity: 1.0,
         radius: 8              // For circle waypoints
+    },
+    [MAP_OBJECT_TYPES.warppoint]: {
+        color: '#9b59b6',      // Purple
+        strokeColor: '#8e44ad',
+        strokeWidth: 2,
+        opacity: 1.0,
+        radius: 10             // Slightly larger than waypoint
     }
 };

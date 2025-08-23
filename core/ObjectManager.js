@@ -198,7 +198,8 @@ export class ObjectManager {
     }
 
     canResize(index) {
-        return this.mapTypes[index] !== 'waypoint';
+        return this.mapTypes[index] !== 'waypoint' && this.mapTypes[index] !== 'warppoint';
+
     }
 
      toJSON() {

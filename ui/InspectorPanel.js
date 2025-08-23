@@ -149,6 +149,10 @@ export class InspectorPanel {
                     <option value="right" ${obj.extra?.textAlign === 'right' ? 'selected' : ''}>Right</option>
                 </select></div>`;
 
+            case 'portalId':
+               return `<div class="inspector-field"><div class="inspector-label">Portal ID</div><input type="text" class="inspector-input" id="inspector-portalId" value="${obj.extra?.portalId || ''}" placeholder="Enter portal ID..."></div>`;
+
+
             default:
                 return '';
         }
@@ -177,7 +181,9 @@ export class InspectorPanel {
                 fontSize: () => this.updateExtraProperty('fontSize', parsedValue),
                 fontFamily: () => this.updateExtraProperty('fontFamily', parsedValue),
                 textAlign: () => this.updateExtraProperty('textAlign', parsedValue),
-                opacity: () => this.updateExtraProperty('opacity', parsedValue)
+                opacity: () => this.updateExtraProperty('opacity', parsedValue),
+                portalId: () => this.updateExtraProperty('portalId', parsedValue)
+
             };
 
             const handler = handlers[property];
@@ -358,6 +364,22 @@ export class InspectorPanel {
         addInputEventListener('inspector-fontSize', 'change', (e) => updateProperty('fontSize', e.target.value, true));
         addInputEventListener('inspector-fontFamily', 'change', (e) => updateProperty('fontFamily', e.target.value));
         addInputEventListener('inspector-textAlign', 'change', (e) => updateProperty('textAlign', e.target.value));
+        
+        
+        // Portal ID with validation
+        addInputEventListener('inspector-portalId', 'change', (e) => {
+            const newPortalId = e.target.value.trim();
+            
+            if (newPortalId && !this.isValidObjectId(newPortalId)) {
+                alert('Portal ID must contain only letters, numbers, underscore, and hyphen');
+                e.target.value = obj.extra?.portalId || '';
+                return;
+            }
+            
+            updateProperty('portalId', newPortalId);
+        });
+
+
 
         // Z-Order buttons
         addInputEventListener('move-up', 'click', () => {

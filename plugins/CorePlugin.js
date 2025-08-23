@@ -2,6 +2,7 @@ import { IPlugin } from '../types/IPlugin.js';
 import { SelectTool } from '../tools/SelectTool.js';
 import { PanTool } from '../tools/PanTool.js';
 import { WaypointTool } from '../tools/WaypointTool.js';
+import { WarpPointTool } from '../tools/WarpPointTool.js';
 import { ImageTool } from '../tools/ImageTool.js';
 import { DrawingTool } from '../tools/DrawingTool.js';
 
@@ -9,6 +10,7 @@ import { RectangleRenderer } from '../renderers/RectangleRenderer.js';
 import { CircleRenderer } from '../renderers/CircleRenderer.js';
 import { MapObjectRenderer } from '../renderers/MapObjectRenderer.js';
 import { WaypointRenderer } from '../renderers/WaypointRenderer.js';
+import { WarpPointRenderer } from '../renderers/WarpPointRenderer.js'; 
 import { ImageRenderer } from '../renderers/ImageRenderer.js';
 
 import { MAP_OBJECT_STYLES } from '../map-editor/MapObjects.js';
@@ -32,6 +34,7 @@ export default class CorePlugin extends IPlugin {
             new SelectTool(),
             new PanTool(),
             new WaypointTool(),
+            new WarpPointTool(),
             new ImageTool(),
             new DrawingTool('wall', 'Wall', 'rectangle', MAP_OBJECT_STYLES.wall.color, 'wall', { icon: '🧱' }),
             new DrawingTool('corridor', 'Corridor', 'rectangle', MAP_OBJECT_STYLES.corridor.color, 'corridor', { icon: '🚶' }),
@@ -41,6 +44,7 @@ export default class CorePlugin extends IPlugin {
         // Core renderers (order matters - most specific first)
         this.renderers = [
             new WaypointRenderer(),
+            new WarpPointRenderer(),
             new MapObjectRenderer(),
             new ImageRenderer(this.editor.imageManager, () => this.editor.render()),
             new CircleRenderer(),

@@ -12,6 +12,7 @@ import { RectangleRenderer } from '../renderers/RectangleRenderer.js';
 import { CircleRenderer } from '../renderers/CircleRenderer.js';
 import { MapObjectRenderer } from '../renderers/MapObjectRenderer.js';
 import { WaypointRenderer } from '../renderers/WaypointRenderer.js';
+import { WarpPointRenderer } from '../renderers/WarpPointRenderer.js';
 import { ImageRenderer } from '../renderers/ImageRenderer.js';
 import { TextRenderer } from '../renderers/TextRenderer.js';
 
@@ -36,7 +37,11 @@ export class RuntimeViewer extends CanvasEngine {
         this.visibility = {
             corridors: true,
             walls: true,
-            waypoints: true
+            waypoints: true,
+            warppoints: true,
+            warp_points: true,
+            images: true
+
         };
         
         // Core systems (optimized for runtime)
@@ -69,6 +74,8 @@ export class RuntimeViewer extends CanvasEngine {
         this.renderers.register(new TextRenderer());
         this.renderers.register(new CircleRenderer());
         this.renderers.register(new RectangleRenderer());
+        this.renderers.register(new WarpPointRenderer());
+
     }
 
     setupRuntimeEventListeners() {
@@ -286,11 +293,15 @@ export class RuntimeViewer extends CanvasEngine {
     drawContent() {
         for (let i = 0; i < this.objects.getObjectCount(); i++) {
             const mapType = this.objects.mapTypes[i];
+            const objType = this.objects.types[i];
             
             // ตรวจสอบ visibility setting
             if (mapType === 'corridor' && !this.visibility.corridors) continue;
             if (mapType === 'wall' && !this.visibility.walls) continue;
             if (mapType === 'waypoint' && !this.visibility.waypoints) continue;
+            if (mapType === 'warppoint' && !this.visibility.warppoints) continue;
+            if ((objType === 'image' || objType === 'text') && !this.visibility.images) continue;
+
             
             this.drawObject(i);
         }
