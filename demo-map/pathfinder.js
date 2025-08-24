@@ -39,30 +39,74 @@ export class OrthogonalPathfinder {
         console.log(`Walkable cells: ${walkableCount}/${cols * rows}`);
     }
 
+    // canPlaceObjectAt(centerX, centerY) {
+    //     if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
+
+    //     const halfSize = this.objectSize / 2;
+    //     if (this.objectSize < 5) {
+    //         return this.corridors.some(corridor =>
+    //             centerX >= corridor.x && centerX <= corridor.x + corridor.width &&
+    //             centerY >= corridor.y && centerY <= corridor.y + corridor.height
+    //         );
+    //     }
+
+    //     const corners = [
+    //         { x: centerX - halfSize, y: centerY - halfSize },
+    //         { x: centerX + halfSize, y: centerY - halfSize },
+    //         { x: centerX - halfSize, y: centerY + halfSize },
+    //         { x: centerX + halfSize, y: centerY + halfSize }
+    //     ];
+
+    //     return corners.every(corner =>
+    //         this.corridors.some(corridor =>
+    //             corner.x >= corridor.x && corner.x <= corridor.x + corridor.width &&
+    //             corner.y >= corridor.y && corner.y <= corridor.y + corridor.height
+    //         )
+    //     );
+    // }
+
     canPlaceObjectAt(centerX, centerY) {
         if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
 
         const halfSize = this.objectSize / 2;
-        if (this.objectSize < 5) {
-            return this.corridors.some(corridor =>
-                centerX >= corridor.x && centerX <= corridor.x + corridor.width &&
-                centerY >= corridor.y && centerY <= corridor.y + corridor.height
-            );
-        }
+        const testPoints = this.objectSize < 5 ?
+            [{ x: centerX, y: centerY }] :
+            [
+                { x: centerX - halfSize, y: centerY - halfSize },
+                { x: centerX + halfSize, y: centerY - halfSize },
+                { x: centerX - halfSize, y: centerY + halfSize },
+                { x: centerX + halfSize, y: centerY + halfSize }
+            ];
 
-        const corners = [
-            { x: centerX - halfSize, y: centerY - halfSize },
-            { x: centerX + halfSize, y: centerY - halfSize },
-            { x: centerX - halfSize, y: centerY + halfSize },
-            { x: centerX + halfSize, y: centerY + halfSize }
-        ];
-
-        return corners.every(corner =>
-            this.corridors.some(corridor =>
-                corner.x >= corridor.x && corner.x <= corridor.x + corridor.width &&
-                corner.y >= corridor.y && corner.y <= corridor.y + corridor.height
-            )
+        return testPoints.every(point =>
+            this.isPointInAnyCorridor(point.x, point.y)
         );
+    }
+
+    isPointInAnyCorridor(x, y) {
+        for (const corridor of this.corridors) {
+            if (!corridor.rotation || corridor.rotation === 0) {
+                // ไม่มี rotation - เช็คปกติ
+                if (x >= corridor.x && x <= corridor.x + corridor.width &&
+                    y >= corridor.y && y <= corridor.y + corridor.height) {
+                    return true;
+                }
+            } else {
+                // มี rotation - transform point to local space
+                const cx = corridor.x + corridor.width / 2;
+                const cy = corridor.y + corridor.height / 2;
+                const angle = -corridor.rotation * Math.PI / 180;
+
+                const localX = (x - cx) * Math.cos(angle) - (y - cy) * Math.sin(angle) + cx;
+                const localY = (x - cx) * Math.sin(angle) + (y - cy) * Math.cos(angle) + cy;
+
+                if (localX >= corridor.x && localX <= corridor.x + corridor.width &&
+                    localY >= corridor.y && localY <= corridor.y + corridor.height) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     isPositionClearOfWalls(centerX, centerY) {
@@ -93,18 +137,53 @@ export class OrthogonalPathfinder {
         const allObjects = [...this.corridors, ...this.walls];
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-        allObjects.forEach(obj => {
-            minX = Math.min(minX, obj.x);
-            minY = Math.min(minY, obj.y);
-            maxX = Math.max(maxX, obj.x + obj.width);
-            maxY = Math.max(maxY, obj.y + obj.height);
+        // คำนวณ bounds ที่แท้จริงรวม rotation
+        this.corridors.forEach(corridor => {
+            if (corridor.rotation && corridor.rotation !== 0) {
+                // คำนวณมุมทั้ง 4 หลังหมุน
+                const cx = corridor.x + corridor.width / 2;
+                const cy = corridor.y + corridor.height / 2;
+                const rad = corridor.rotation * Math.PI / 180;
+
+                const corners = [
+                    { x: corridor.x, y: corridor.y },
+                    { x: corridor.x + corridor.width, y: corridor.y },
+                    { x: corridor.x + corridor.width, y: corridor.y + corridor.height },
+                    { x: corridor.x, y: corridor.y + corridor.height }
+                ];
+
+                corners.forEach(corner => {
+                    const rx = cx + (corner.x - cx) * Math.cos(rad) - (corner.y - cy) * Math.sin(rad);
+                    const ry = cy + (corner.x - cx) * Math.sin(rad) + (corner.y - cy) * Math.cos(rad);
+                    minX = Math.min(minX, rx);
+                    minY = Math.min(minY, ry);
+                    maxX = Math.max(maxX, rx);
+                    maxY = Math.max(maxY, ry);
+                });
+            } else {
+                minX = Math.min(minX, corridor.x);
+                minY = Math.min(minY, corridor.y);
+                maxX = Math.max(maxX, corridor.x + corridor.width);
+                maxY = Math.max(maxY, corridor.y + corridor.height);
+            }
         });
 
+        // Walls ไม่มี rotation
+        this.walls.forEach(wall => {
+            minX = Math.min(minX, wall.x);
+            minY = Math.min(minY, wall.y);
+            maxX = Math.max(maxX, wall.x + wall.width);
+            maxY = Math.max(maxY, wall.y + wall.height);
+        });
+
+        // padding พอดี ไม่มากไป
+        const padding = Math.max(50, this.objectSize * 2);
+
         return {
-            minX: minX - this.gridSize * 2,
-            minY: minY - this.gridSize * 2,
-            width: maxX - minX + this.gridSize * 4,
-            height: maxY - minY + this.gridSize * 4
+            minX: minX - padding,
+            minY: minY - padding,
+            width: maxX - minX + (padding * 2),
+            height: maxY - minY + (padding * 2)
         };
     }
 
@@ -120,14 +199,34 @@ export class OrthogonalPathfinder {
     }
 
     getNeighbors(node) {
-        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        const dirs = [
+            [-1, 0], [1, 0], [0, -1], [0, 1],  // 4 ทิศหลัก
+            [-1, -1], [1, -1], [-1, 1], [1, 1]  // 4 ทิศทแยง
+        ];
+
         return dirs
-            .map(([dx, dy]) => this.getNode(node.x + dx, node.y + dy))
-            .filter(neighbor => neighbor && neighbor.walkable);
+            .map(([dx, dy]) => {
+                const neighbor = this.getNode(node.x + dx, node.y + dy);
+                if (!neighbor || !neighbor.walkable) return null;
+
+                // ถ้าเป็นการเดินทแยง ต้องเช็คว่าทางผ่านไม่ถูกบล็อก
+                if (dx !== 0 && dy !== 0) {
+                    const side1 = this.getNode(node.x + dx, node.y);
+                    const side2 = this.getNode(node.x, node.y + dy);
+                    if (!side1?.walkable || !side2?.walkable) return null;
+                }
+
+                return neighbor;
+            })
+            .filter(neighbor => neighbor !== null);
+
     }
 
     heuristic(a, b) {
-        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        // ใช้ Euclidean distance แทน Manhattan
+        const dx = Math.abs(a.x - b.x);
+        const dy = Math.abs(a.y - b.y);
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     findPath(startWorld, endWorld) {
@@ -181,13 +280,20 @@ export class OrthogonalPathfinder {
                     path.push({ x: temp.worldX, y: temp.worldY });
                     temp = temp.parent;
                 }
-                return this.optimizePath(path.reverse());
+                const optimized = this.optimizePath(path.reverse());
+                return this.smoothPath(optimized); 
             }
 
             this.getNeighbors(current).forEach(neighbor => {
                 if (closedSet.has(neighbor)) return;
 
-                let moveCost = 1;
+                // คำนวณ cost - ทแยงมีค่ามากกว่า
+                const dx = Math.abs(neighbor.x - current.x);
+                const dy = Math.abs(neighbor.y - current.y);
+                const isDiagonal = dx !== 0 && dy !== 0;
+                let moveCost = isDiagonal ? Math.sqrt(2) : 1;
+
+                // ยังคง bias ไปทางเป้าหมาย
                 const toEndX = endNode.x - current.x;
                 const toEndY = endNode.y - current.y;
                 const moveX = neighbor.x - current.x;
@@ -195,10 +301,11 @@ export class OrthogonalPathfinder {
 
                 if ((toEndX > 0 && moveX > 0) || (toEndX < 0 && moveX < 0) ||
                     (toEndY > 0 && moveY > 0) || (toEndY < 0 && moveY < 0)) {
-                    moveCost = 0.99;
+                    moveCost *= 0.99;
                 }
 
                 const tentativeG = current.g + moveCost;
+
 
                 if (!openSet.includes(neighbor)) {
                     openSet.push(neighbor);
@@ -242,6 +349,89 @@ export class OrthogonalPathfinder {
         simplified.push(path[path.length - 1]);
         return simplified;
     }
+
+    // smoothPath(path) {
+    //     if (path.length <= 2) return path;
+
+    //     const smoothed = [path[0]];
+    //     let i = 0;
+
+    //     while (i < path.length - 1) {
+    //         let furthest = i + 1;
+
+    //         // หาจุดไกลสุดที่ลากเส้นตรงได้
+    //         for (let j = i + 2; j < path.length; j++) {
+    //             if (this.canDrawDirectLine(path[i], path[j])) {
+    //                 furthest = j;
+    //             } else {
+    //                 break;
+    //             }
+    //         }
+
+    //         smoothed.push(path[furthest]);
+    //         i = furthest;
+    //     }
+
+    //     return smoothed;
+    // }
+
+    smoothPath(path) {
+        if (path.length <= 2) return path;
+        
+        const smoothed = [path[0]];
+        let current = 0;
+        
+        while (current < path.length - 1) {
+            // ลองข้ามไปจุดสุดท้ายเลย
+            if (current < path.length - 2 && 
+                this.canDrawDirectLine(path[current], path[path.length - 1])) {
+                smoothed.push(path[path.length - 1]);
+                break;
+            }
+            
+            // หาจุดไกลสุด
+            let furthest = current + 1;
+            for (let i = path.length - 1; i > current + 1; i--) {
+                if (this.canDrawDirectLine(path[current], path[i])) {
+                    furthest = i;
+                    break;
+                }
+            }
+            
+            smoothed.push(path[furthest]);
+            current = furthest;
+        }
+        
+        return smoothed;
+    }
+
+    canDrawDirectLine(from, to) {
+        const steps = 50;  // เพิ่มจาก 20 เป็น 50
+        const halfSize = this.objectSize / 2;
+        
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const x = from.x + (to.x - from.x) * t;
+            const y = from.y + (to.y - from.y) * t;
+            
+            // เช็คทั้ง center และขอบของ object
+            const testPoints = [
+                {x: x, y: y},
+                {x: x - halfSize, y: y - halfSize},
+                {x: x + halfSize, y: y - halfSize},
+                {x: x - halfSize, y: y + halfSize},
+                {x: x + halfSize, y: y + halfSize}
+            ];
+            
+            for (const point of testPoints) {
+                if (!this.isPointInAnyCorridor(point.x, point.y) || 
+                    !this.isPositionClearOfWalls(x, y)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 }
 
 
@@ -251,7 +441,7 @@ export function lineIntersectsWalls(point1, point2, walls) {
         const t = i / samples;
         const checkX = point1.x + (point2.x - point1.x) * t;
         const checkY = point1.y + (point2.y - point1.y) * t;
-        
+
         if (walls.some(wall =>
             checkX >= wall.x && checkX <= wall.x + wall.width &&
             checkY >= wall.y && checkY <= wall.y + wall.height

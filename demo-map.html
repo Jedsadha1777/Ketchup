@@ -785,10 +785,10 @@
 
                 switch (mapType) {
                     case 'corridor':
-                        corridors.push({ id: objectId, ...bounds });
+                        corridors.push({ id: objectId, ...bounds,rotation: viewer.objects.extra[i]?.rotation || 0  });
                         break;
                     case 'wall':
-                        walls.push({ id: objectId, ...bounds });
+                        walls.push({ id: objectId, ...bounds,rotation: viewer.objects.extra[i]?.rotation || 0  });
                         break;
                     case 'waypoint':
                     case 'warppoint':
@@ -1000,36 +1000,77 @@
             ctx.restore();
         }
 
+        // function createCorridorCache() {
+        //     const canvas = document.createElement('canvas');
+        //     const bounds = getMapBounds();
+
+        //     const padding = 50;
+        //     canvas.width = bounds.width + padding * 2;
+        //     canvas.height = bounds.height + padding * 2;
+        //     const ctx = canvas.getContext('2d');
+
+        //     bounds.minX -= padding;
+        //     bounds.minY -= padding;
+        //     bounds.width += padding * 2;
+        //     bounds.height += padding * 2;
+
+        //     ctx.fillStyle = '#ffffff';
+        //     corridors.forEach(corridor => {
+        //         const x = corridor.x - bounds.minX;
+        //         const y = corridor.y - bounds.minY;
+        //         ctx.fillRect(x, y, corridor.width, corridor.height);
+        //     });
+
+        //     ctx.fillStyle = '#000000';
+        //     walls.forEach(wall => {
+        //         const x = wall.x - bounds.minX;
+        //         const y = wall.y - bounds.minY;
+        //         ctx.fillRect(x, y, wall.width, wall.height);
+        //     });
+
+        //     return { canvas, bounds };
+        // }
+
         function createCorridorCache() {
-            const canvas = document.createElement('canvas');
-            const bounds = getMapBounds();
+    const canvas = document.createElement('canvas');
+    const bounds = getMapBounds();
 
-            const padding = 50;
-            canvas.width = bounds.width + padding * 2;
-            canvas.height = bounds.height + padding * 2;
-            const ctx = canvas.getContext('2d');
+    const padding = 50;
+    canvas.width = bounds.width + padding * 2;
+    canvas.height = bounds.height + padding * 2;
+    const ctx = canvas.getContext('2d');
 
-            bounds.minX -= padding;
-            bounds.minY -= padding;
-            bounds.width += padding * 2;
-            bounds.height += padding * 2;
+    bounds.minX -= padding;
+    bounds.minY -= padding;
+    bounds.width += padding * 2;
+    bounds.height += padding * 2;
 
-            ctx.fillStyle = '#ffffff';
-            corridors.forEach(corridor => {
-                const x = corridor.x - bounds.minX;
-                const y = corridor.y - bounds.minY;
-                ctx.fillRect(x, y, corridor.width, corridor.height);
-            });
-
-            ctx.fillStyle = '#000000';
-            walls.forEach(wall => {
-                const x = wall.x - bounds.minX;
-                const y = wall.y - bounds.minY;
-                ctx.fillRect(x, y, wall.width, wall.height);
-            });
-
-            return { canvas, bounds };
+    ctx.fillStyle = '#ffffff';
+    corridors.forEach(corridor => {
+        if (corridor.rotation && corridor.rotation !== 0) {
+            ctx.save();
+            const cx = corridor.x + corridor.width / 2;
+            const cy = corridor.y + corridor.height / 2;
+            ctx.translate(cx - bounds.minX, cy - bounds.minY);
+            ctx.rotate(corridor.rotation * Math.PI / 180);
+            ctx.fillRect(-corridor.width/2, -corridor.height/2, corridor.width, corridor.height);
+            ctx.restore();
+        } else {
+            const x = corridor.x - bounds.minX;
+            const y = corridor.y - bounds.minY;
+            ctx.fillRect(x, y, corridor.width, corridor.height);
         }
+    });
+
+    ctx.fillStyle = '#000000';
+    walls.forEach(wall => {
+        const x = wall.x - bounds.minX;
+        const y = wall.y - bounds.minY;
+        ctx.fillRect(x, y, wall.width, wall.height);
+    });
+
+    return { canvas, bounds };
+}
 
         function getMapBounds() {
             const allObjects = [...corridors, ...walls];
@@ -1046,6 +1087,50 @@
         }
 
         function drawCorridorBuffers() {
+            // const ctx = viewer.ctx;
+            // const halfSize = objectSize / 2;
+
+            // ctx.save();
+            // ctx.scale(viewer.zoom, viewer.zoom);
+            // ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
+
+            // if (showCorridors) {
+            //     ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+            //     corridors.forEach(corridor => {
+            //         ctx.fillRect(corridor.x, corridor.y, corridor.width, corridor.height);
+            //     });
+
+            //     ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+            //     ctx.beginPath();
+            //     corridors.forEach(corridor => {
+            //         const safeLeft = corridor.x + halfSize;
+            //         const safeTop = corridor.y + halfSize;
+            //         const safeWidth = corridor.width - objectSize;
+            //         const safeHeight = corridor.height - objectSize;
+
+            //         if (safeWidth > 0 && safeHeight > 0) {
+            //             ctx.rect(safeLeft, safeTop, safeWidth, safeHeight);
+            //         }
+            //     });
+            //     ctx.fill();
+
+            //     const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+            //     ctx.fillStyle = 'rgba(0, 0, 255, 1)';
+
+            
+            //     for (let y = 0; y < pathfinder.rows; y++) {
+            //         for (let x = 0; x < pathfinder.cols; x++) {
+            //             if (pathfinder.grid[y][x].walkable) {
+            //                 const worldX = pathfinder.grid[y][x].worldX;
+            //                 const worldY = pathfinder.grid[y][x].worldY;
+            //                 ctx.beginPath();
+            //                 ctx.arc(worldX, worldY, 2 / viewer.zoom, 0, Math.PI * 2);
+            //                 ctx.fill();
+            //             }
+            //         }
+            //     }
+            // }
+
             const ctx = viewer.ctx;
             const halfSize = objectSize / 2;
 
@@ -1054,30 +1139,52 @@
             ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
 
             if (showCorridors) {
+                // วาด corridor (สีเหลือง)
                 ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
                 corridors.forEach(corridor => {
-                    ctx.fillRect(corridor.x, corridor.y, corridor.width, corridor.height);
-                });
-
-                ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
-                ctx.beginPath();
-                corridors.forEach(corridor => {
-                    const safeLeft = corridor.x + halfSize;
-                    const safeTop = corridor.y + halfSize;
-                    const safeWidth = corridor.width - objectSize;
-                    const safeHeight = corridor.height - objectSize;
-
-                    if (safeWidth > 0 && safeHeight > 0) {
-                        ctx.rect(safeLeft, safeTop, safeWidth, safeHeight);
+                    if (corridor.rotation && corridor.rotation !== 0) {
+                        ctx.save();
+                        const cx = corridor.x + corridor.width / 2;
+                        const cy = corridor.y + corridor.height / 2;
+                        ctx.translate(cx, cy);
+                        ctx.rotate(corridor.rotation * Math.PI / 180);
+                        ctx.fillRect(-corridor.width/2, -corridor.height/2, corridor.width, corridor.height);
+                        ctx.restore();
+                    } else {
+                        ctx.fillRect(corridor.x, corridor.y, corridor.width, corridor.height);
                     }
                 });
-                ctx.fill();
 
+                // วาด safe area (สีเขียว) - ต้องหมุนด้วยถ้า corridor หมุน
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+                corridors.forEach(corridor => {
+                    const safeWidth = corridor.width - objectSize;
+                    const safeHeight = corridor.height - objectSize;
+                    
+                    if (safeWidth > 0 && safeHeight > 0) {
+                        if (corridor.rotation && corridor.rotation !== 0) {
+                            ctx.save();
+                            const cx = corridor.x + corridor.width / 2;
+                            const cy = corridor.y + corridor.height / 2;
+                            ctx.translate(cx, cy);
+                            ctx.rotate(corridor.rotation * Math.PI / 180);
+                            ctx.fillRect(-safeWidth/2, -safeHeight/2, safeWidth, safeHeight);
+                            ctx.restore();
+                        } else {
+                            ctx.fillRect(
+                                corridor.x + halfSize, 
+                                corridor.y + halfSize, 
+                                safeWidth, 
+                                safeHeight
+                            );
+                        }
+                    }
+                });
+
+                // วาดจุดสีน้ำเงิน
                 const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
                 ctx.fillStyle = 'rgba(0, 0, 255, 1)';
-
                 
-
                 for (let y = 0; y < pathfinder.rows; y++) {
                     for (let x = 0; x < pathfinder.cols; x++) {
                         if (pathfinder.grid[y][x].walkable) {
@@ -1269,7 +1376,22 @@
             paths = [];
             viewer.render();
 
-            const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
+
+            // ปรับ gridSize ตาม rotation
+            const maxRotation = Math.max(...corridors.map(c => 
+                Math.abs(c.rotation || 0)
+            ));
+            
+            // ถ้าเอียงมาก ใช้ grid หยาบขึ้น
+            let adaptiveGridSize = gridSize;
+            if (maxRotation > 40) adaptiveGridSize = 10;  // ลดลงจาก 25
+            else if (maxRotation > 30) adaptiveGridSize = 8;   // ลดลงจาก 20
+            else if (maxRotation > 15) adaptiveGridSize = 7;   // ลดลงจาก 15
+            
+            console.log(`Finding path with grid size: ${adaptiveGridSize}, object size: ${objectSize}`);
+            
+            const pathfinder = new OrthogonalPathfinder(corridors, walls, adaptiveGridSize, objectSize);
+
 
             if (!fromWaypoint || !toWaypoint) {
                 alert('Selected waypoints not found');
@@ -1278,11 +1400,11 @@
 
             const fromPos = pathfinder.canPlaceObjectAt(fromWaypoint.x, fromWaypoint.y)
                 ? fromWaypoint
-                : findNearestCorridorPosition(fromWaypoint, corridors, walls, gridSize, objectSize);
+                : findNearestCorridorPosition(fromWaypoint, corridors, walls, adaptiveGridSize, objectSize);
 
             const toPos = pathfinder.canPlaceObjectAt(toWaypoint.x, toWaypoint.y)
                 ? toWaypoint
-                : findNearestCorridorPosition(toWaypoint, corridors, walls, gridSize, objectSize);
+                : findNearestCorridorPosition(toWaypoint, corridors, walls, adaptiveGridSize, objectSize);
 
             const path = pathfinder.findPath(fromPos, toPos);
             if (path) {
