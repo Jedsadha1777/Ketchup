@@ -262,6 +262,41 @@ export class MapEditor extends CanvasEngine {
         return cursorMap[handle] || 'default';
     }
 
+    getCursorForRotatedHandle(handle, rotation) {
+        if (rotation === 0) {
+            return this.getCursorForHandle(handle);
+        }
+        
+        // Map handle to angle relative to object
+        const handleAngles = {
+            'nw': -45,
+            'ne': 45,
+            'sw': -135,
+            'se': 135,
+            'n': 0,
+            's': 180,
+            'e': 90,
+            'w': 270
+        };
+        
+        const baseAngle = handleAngles[handle] || 0;
+        const totalAngle = (baseAngle + rotation) % 360;
+        const normalizedAngle = totalAngle < 0 ? totalAngle + 360 : totalAngle;
+        
+        // Convert angle to appropriate cursor
+        if (normalizedAngle >= 337.5 || normalizedAngle < 22.5) return 'ns-resize';
+        if (normalizedAngle >= 22.5 && normalizedAngle < 67.5) return 'nesw-resize';
+        if (normalizedAngle >= 67.5 && normalizedAngle < 112.5) return 'ew-resize';
+        if (normalizedAngle >= 112.5 && normalizedAngle < 157.5) return 'nwse-resize';
+        if (normalizedAngle >= 157.5 && normalizedAngle < 202.5) return 'ns-resize';
+        if (normalizedAngle >= 202.5 && normalizedAngle < 247.5) return 'nesw-resize';
+        if (normalizedAngle >= 247.5 && normalizedAngle < 292.5) return 'ew-resize';
+        if (normalizedAngle >= 292.5 && normalizedAngle < 337.5) return 'nwse-resize';
+        
+        return 'default';
+    }
+
+
     handleMouseDown(e, pos) {
         this.tools.get(this.currentTool)?.onPointerDown?.(e, pos, this.api);
     }
@@ -343,9 +378,14 @@ export class MapEditor extends CanvasEngine {
 
             // Resize utilities
             getHandleAtPoint: this.getHandleAtPoint.bind(this),
+            getRotatedHandleAtPoint: this.getRotatedHandleAtPoint.bind(this),
             getCursorForHandle: this.getCursorForHandle.bind(this),
+            getCursorForRotatedHandle: this.getCursorForRotatedHandle.bind(this),
             calculateResize: this.calculateResize.bind(this),
-            drawResizeHandles: this.drawResizeHandles.bind(this)
+            calculateRotatedResize: this.calculateRotatedResize.bind(this),
+            drawResizeHandles: this.drawResizeHandles.bind(this),
+            drawRotatedResizeHandles: this.drawRotatedResizeHandles.bind(this)
+
         };
     }
 

@@ -159,8 +159,14 @@ export class DrawingTool extends ITool {
         // Draw resize handles for newly created object
         if (this.enableResizeMode && this.createdObjectIndex !== -1 && ctx.objects.canResize(this.createdObjectIndex)) {
             const bounds = ctx.objects.getBounds(this.createdObjectIndex);
-            ctx.drawResizeHandles(bounds);
-         }
+            const rotation = ctx.objects.extra[this.createdObjectIndex]?.rotation || 0;
+            
+            if (rotation !== 0) {
+                ctx.drawRotatedResizeHandles(bounds, rotation);
+            } else {
+                ctx.drawResizeHandles(bounds);
+            }
+        }
     }
 
     drawPreview(ctx, x, y, width, height) {

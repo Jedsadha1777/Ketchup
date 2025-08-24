@@ -613,19 +613,48 @@ export class TextTool extends ITool {
         if (this.isEditing && this.editingIndex !== -1) {
             const bounds = ctx.objects.getBounds(this.editingIndex);
             const extra = ctx.objects.extra[this.editingIndex];
+            const rotation = extra?.rotation || 0;
 
-            ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
-            ctx.ctx.lineWidth = 2 / ctx.zoom;
-            ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
-            ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-            ctx.ctx.setLineDash([]);
 
-            const cornerSize = 6 / ctx.zoom;
-            ctx.ctx.fillStyle = '#0066cc';
-            ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
-            ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
-            ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
-            ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
+            ctx.ctx.save();
+            
+            if (rotation !== 0) {
+                const centerX = bounds.x + bounds.width / 2;
+                const centerY = bounds.y + bounds.height / 2;
+                ctx.ctx.translate(centerX, centerY);
+                ctx.ctx.rotate((rotation * Math.PI) / 180);
+                ctx.ctx.translate(-bounds.width / 2, -bounds.height / 2);
+                
+                // Draw relative to the transformed coordinate system
+                ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
+                ctx.ctx.lineWidth = 2 / ctx.zoom;
+                ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
+                ctx.ctx.strokeRect(0, 0, bounds.width, bounds.height);
+                ctx.ctx.setLineDash([]);
+                
+                const cornerSize = 6 / ctx.zoom;
+                ctx.ctx.fillStyle = '#0066cc';
+                ctx.ctx.fillRect(-cornerSize / 2, -cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(bounds.width - cornerSize / 2, -cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(-cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(bounds.width - cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
+            } else {
+                ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
+                ctx.ctx.lineWidth = 2 / ctx.zoom;
+                ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
+                ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+                ctx.ctx.setLineDash([]);
+                
+                const cornerSize = 6 / ctx.zoom;
+                ctx.ctx.fillStyle = '#0066cc';
+                ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
+                ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
+            }
+            
+            ctx.ctx.restore();
+
 
             if (this.cursorVisible && extra) {
                 this.drawCursor(ctx, bounds, extra);

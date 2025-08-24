@@ -27,7 +27,7 @@ export class CanvasEngine {
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
 
-         // Event system for plugins
+        // Event system for plugins
         this.eventListeners = new Map();
 
         this.setupCoreEventListeners();
@@ -224,7 +224,68 @@ export class CanvasEngine {
         return null;
     }
 
-    calculateResize(handle, startBounds, currentPos) {
+    getRotatedHandleAtPoint(bounds, rotation, px, py) {
+        if (rotation === 0) {
+            return this.getHandleAtPoint(bounds, px, py);
+        }
+        
+        const handles = this.getRotatedResizeHandles(bounds, rotation);
+        
+        for (const [handleName, handle] of Object.entries(handles)) {
+            if (px >= handle.x && px <= handle.x + handle.width &&
+                py >= handle.y && py <= handle.y + handle.height) {
+                return handleName;
+            }
+        }
+        return null;
+    }
+
+    getRotatedResizeHandles(bounds, rotation = 0) {
+        if (rotation === 0) {
+            return this.getResizeHandles(bounds);
+        }
+        
+        const { x, y, width, height } = bounds;
+        const handleSize = this.handleSizePx / this.zoom;
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+        const rad = (rotation * Math.PI) / 180;
+        
+        const relativePositions = {
+            nw: { x: -width/2, y: -height/2 },
+            ne: { x: width/2, y: -height/2 },
+            sw: { x: -width/2, y: height/2 },
+            se: { x: width/2, y: height/2 },
+            n: { x: 0, y: -height/2 },
+            s: { x: 0, y: height/2 },
+            e: { x: width/2, y: 0 },
+            w: { x: -width/2, y: 0 }
+        };
+        
+        const rotatedHandles = {};
+        for (const [name, relPos] of Object.entries(relativePositions)) {
+            const rotX = relPos.x * Math.cos(rad) - relPos.y * Math.sin(rad);
+            const rotY = relPos.x * Math.sin(rad) + relPos.y * Math.cos(rad);
+            
+            rotatedHandles[name] = {
+                x: centerX + rotX - handleSize/2,
+                y: centerY + rotY - handleSize/2,
+                width: handleSize,
+                height: handleSize
+            };
+        }
+        
+        return rotatedHandles;
+    }
+
+    calculateResize(handle, startBounds, currentPos, rotation = 0) {
+        if (rotation !== 0) {
+            return this.calculateRotatedResize(handle, startBounds, currentPos, rotation);
+        }
+        return this.calculateStandardResize(handle, startBounds, currentPos);
+    }
+
+    calculateStandardResize(handle, startBounds, currentPos) {
         const { x: startX, y: startY, width: startW, height: startH } = startBounds;
         const snappedPos = this.snapPosition(currentPos.x, currentPos.y);
         const snappedX = snappedPos.x;
@@ -234,28 +295,28 @@ export class CanvasEngine {
         
         switch (handle) {
             case 'nw':
-                newBounds.x = Math.min(snappedX, startX + startW - 10);
-                newBounds.y = Math.min(snappedY, startY + startH - 10);
-                newBounds.width = startX + startW - newBounds.x;
-                newBounds.height = startY + startH - newBounds.y;
+                newBounds.x = snappedX;
+                newBounds.y = snappedY;
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
                 break;
             case 'ne':
-                newBounds.y = Math.min(snappedY, startY + startH - 10);
+                newBounds.y = snappedY;
                 newBounds.width = Math.max(snappedX - startX, 10);
-                newBounds.height = startY + startH - newBounds.y;
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
                 break;
             case 'sw':
-                newBounds.x = Math.min(snappedX, startX + startW - 10);
-                newBounds.width = startX + startW - newBounds.x;
+                newBounds.x = snappedX;
                 newBounds.height = Math.max(snappedY - startY, 10);
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
                 break;
             case 'se':
                 newBounds.width = Math.max(snappedX - startX, 10);
                 newBounds.height = Math.max(snappedY - startY, 10);
                 break;
             case 'n':
-                newBounds.y = Math.min(snappedY, startY + startH - 10);
-                newBounds.height = startY + startH - newBounds.y;
+                newBounds.y = snappedY;
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
                 break;
             case 's':
                 newBounds.height = Math.max(snappedY - startY, 10);
@@ -264,8 +325,74 @@ export class CanvasEngine {
                 newBounds.width = Math.max(snappedX - startX, 10);
                 break;
             case 'w':
-                newBounds.x = Math.min(snappedX, startX + startW - 10);
-                newBounds.width = startX + startW - newBounds.x;
+                newBounds.x = snappedX;
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
+                break;
+        }
+        
+        // Minimum size enforcement
+        newBounds.width = Math.max(newBounds.width, 10);
+        newBounds.height = Math.max(newBounds.height, 10);
+        
+        return newBounds;
+    }
+
+    calculateRotatedResize(handle, startBounds, currentPos, rotation) {
+        // Transform mouse position to object's local coordinate system
+        const centerX = startBounds.x + startBounds.width / 2;
+        const centerY = startBounds.y + startBounds.height / 2;
+        const rad = (-rotation * Math.PI) / 180; // Inverse rotation
+        
+        // Convert mouse position to local space
+        const localX = (currentPos.x - centerX) * Math.cos(rad) - (currentPos.y - centerY) * Math.sin(rad);
+        const localY = (currentPos.x - centerX) * Math.sin(rad) + (currentPos.y - centerY) * Math.cos(rad);
+        
+        // Add back the center to get local world coordinates
+        const localMouseX = centerX + localX;
+        const localMouseY = centerY + localY;
+        
+        // Use standard resize logic with transformed coordinates
+        const snappedPos = this.snapPosition(localMouseX, localMouseY);
+        const { x: startX, y: startY, width: startW, height: startH } = startBounds;
+        const snappedX = snappedPos.x;
+        const snappedY = snappedPos.y;
+        
+        let newBounds = { ...startBounds };
+        
+        switch (handle) {
+            case 'nw':
+                newBounds.x = snappedX;
+                newBounds.y = snappedY;
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
+                break;
+            case 'ne':
+                newBounds.y = snappedY;
+                newBounds.width = Math.max(snappedX - startX, 10);
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
+                break;
+            case 'sw':
+                newBounds.x = snappedX;
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
+                newBounds.height = Math.max(snappedY - startY, 10);
+                break;
+            case 'se':
+                newBounds.width = Math.max(snappedX - startX, 10);
+                newBounds.height = Math.max(snappedY - startY, 10);
+                break;
+            case 'n':
+                newBounds.y = snappedY;
+                newBounds.height = Math.max(startY + startH - snappedY, 10);
+                break;
+            case 's':
+                newBounds.height = Math.max(snappedY - startY, 10);
+                break;
+            case 'e':
+                newBounds.width = Math.max(snappedX - startX, 10);
+                break;
+            case 'w':
+                newBounds.x = snappedX;
+                newBounds.width = Math.max(startX + startW - snappedX, 10);
                 break;
         }
         
@@ -289,11 +416,47 @@ export class CanvasEngine {
         
         for (const handle of Object.values(handles)) {
             // Draw white square with blue border
+            // this.ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
+            // this.ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
+
+            const centerX = handle.x + handle.width / 2;
+            const centerY = handle.y + handle.height / 2;
+            
+            this.ctx.save();
+            this.ctx.translate(centerX, centerY);
+            this.ctx.rotate((rotation * Math.PI) / 180);
+            this.ctx.fillRect(-handle.width / 2, -handle.height / 2, handle.width, handle.height);
+            this.ctx.strokeRect(-handle.width / 2, -handle.height / 2, handle.width, handle.height);
+            this.ctx.restore();
+
+        }
+        
+        // // Reset shadow
+        // this.ctx.shadowColor = 'transparent';
+        // this.ctx.shadowBlur = 0;
+        // this.ctx.shadowOffsetX = 0;
+        // this.ctx.shadowOffsetY = 0;
+        this.ctx.restore();
+    }
+
+    drawRotatedResizeHandles(bounds, rotation = 0) {
+        const handles = this.getRotatedResizeHandles(bounds, rotation);
+        
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.strokeStyle = '#0066cc';
+        this.ctx.lineWidth = 2 / this.zoom;
+        
+        this.ctx.save();
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        this.ctx.shadowBlur = 4 / this.zoom;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 2 / this.zoom;
+        
+        for (const handle of Object.values(handles)) {
             this.ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
             this.ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
         }
         
-        // Reset shadow
         this.ctx.shadowColor = 'transparent';
         this.ctx.shadowBlur = 0;
         this.ctx.shadowOffsetX = 0;
@@ -313,7 +476,7 @@ export class CanvasEngine {
 
         for (let x = startX; x <= endX; x += this.gridSize) {
             this.ctx.moveTo(x, startY);
-            this.ctx.lineTo(x, endY);
+            this.ctx.lineTo(x, endX);
         }
 
         for (let y = startY; y <= endY; y += this.gridSize) {

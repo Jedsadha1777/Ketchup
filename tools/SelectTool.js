@@ -92,14 +92,23 @@ export class SelectTool extends ITool {
          // 1) Check resize handles first
         if (selectedIndex !== -1 && ctx.objects.canResize(selectedIndex) && !ctx.objects.hasMultipleSelected()) {
             const bounds = ctx.objects.getBounds(selectedIndex);
-            const handle = ctx.getHandleAtPoint(bounds, pos.x, pos.y);
+            const rotation = ctx.objects.extra[selectedIndex]?.rotation || 0;
+            const handle = rotation !== 0 ? 
+                            ctx.getRotatedHandleAtPoint(bounds, rotation, pos.x, pos.y) :
+                            ctx.getHandleAtPoint(bounds, pos.x, pos.y);
+
             if (handle) {
                 this.isResizing = true;
                 this.resizeHandle = handle;
+                this.resizeRotation = rotation;
                 this.resizeStartBounds = { ...bounds };
                 this.resizeObjectId = ctx.objects.getIdByIndex(selectedIndex);
 
-                ctx.updateCursor(ctx.getCursorForHandle(handle));
+                const cursorToUse = rotation !== 0 ? 
+                                    ctx.getCursorForRotatedHandle(handle, rotation) :
+                                    ctx.getCursorForHandle(handle);
+                ctx.updateCursor(cursorToUse);
+
                 ctx.render();
                 return;
             }
@@ -195,10 +204,18 @@ export class SelectTool extends ITool {
             // Check resize handles
             if (selectedIndex !== -1 && ctx.objects.canResize(selectedIndex)) {
                 const bounds = ctx.objects.getBounds(selectedIndex);
-                const handle = ctx.getHandleAtPoint(bounds, pos.x, pos.y);
+                
+                const rotation = ctx.objects.extra[selectedIndex]?.rotation || 0;
+                const handle = rotation !== 0 ? 
+                                ctx.getRotatedHandleAtPoint(bounds, rotation, pos.x, pos.y) :
+                                ctx.getHandleAtPoint(bounds, pos.x, pos.y);
+
                 if (handle) {
 
-                    newCursor = ctx.getCursorForHandle(handle);
+                    newCursor = rotation !== 0 ? 
+                                ctx.getCursorForRotatedHandle(handle, rotation) :
+                                ctx.getCursorForHandle(handle);
+
                 } else {
 
                     // Use renderer system for hit testing
@@ -242,7 +259,12 @@ export class SelectTool extends ITool {
                 ctx.spatialGrid.removeObject(id, oldBounds.x, oldBounds.y, oldBounds.width, oldBounds.height);
                 
 
-                const newBounds = ctx.calculateResize(this.resizeHandle, this.resizeStartBounds, pos);   
+                const rotation = ctx.objects.extra[selectedIndex]?.rotation || 0;
+
+                const newBounds = ctx.calculateResize(this.resizeHandle, this.resizeStartBounds, pos, rotation);
+                 ctx.objects.setBounds(selectedIndex, newBounds);
+                    
+ 
                 ctx.objects.setBounds(selectedIndex, newBounds);
 
                  // Add to spatial grid at new bounds
@@ -471,7 +493,13 @@ export class SelectTool extends ITool {
         const selectedIndex = ctx.objects.getSelected();
         if (selectedIndex !== -1 && ctx.objects.canResize(selectedIndex) && !ctx.objects.hasMultipleSelected()) {
             const bounds = ctx.objects.getBounds(selectedIndex);
-            ctx.drawResizeHandles(bounds);
+            const rotation = ctx.objects.extra[selectedIndex]?.rotation || 0;
+            
+            if (rotation !== 0) {
+                ctx.drawRotatedResizeHandles(bounds, rotation);
+            } else {
+                ctx.drawResizeHandles(bounds);
+            }
         }
 
         // Draw selection indicators for multi-select
