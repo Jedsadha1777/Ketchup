@@ -70,6 +70,7 @@ export class RuntimeViewer extends CanvasEngine {
     setupRenderers() {
         // Register core renderers
         this.renderers.register(new WaypointRenderer());
+        this.renderers.register(new WarpPointRenderer());
         this.renderers.register(new MapObjectRenderer());
         this.renderers.register(new ImageRenderer(this.imageManager, () => this.render()));
         this.renderers.register(new TextRenderer());
@@ -205,10 +206,33 @@ export class RuntimeViewer extends CanvasEngine {
     // Load map data from JSON
     loadMapData(jsonData) {
         try {
+
+            // Clear all existing objects first
+            const oldCount = this.objects.getObjectCount();
+            if (oldCount > 0) {
+                 // Clear all arrays that exist
+                const arrayProps = ['ids', 'types', 'x', 'y', 'width', 'height', 
+                                  'colors', 'mapTypes', 'objectIds', 'labels', 
+                                  'extra', 'rotations'];
+                
+                for (const prop of arrayProps) {
+                    if (this.objects[prop] && Array.isArray(this.objects[prop])) {
+                        this.objects[prop].length = 0;
+                    }
+                }
+
+                 this.objects.idCounter = 1;
+                 // Clear maps if they exist
+                if (this.objects.idToIndex) this.objects.idToIndex.clear();
+                if (this.objects.objectIdToIndex) this.objects.objectIdToIndex.clear();
+            }
+            
+            // Clear spatial grid
+            this.spatialGrid.clear();
+            
+            // Now load new data
             this.objects.fromJSON(jsonData);
             
-            // Build spatial grid for performance
-            this.spatialGrid.clear();
             for (let i = 0; i < this.objects.getObjectCount(); i++) {
                 const bounds = this.objects.getBounds(i);
                 const id = this.objects.getIdByIndex(i);

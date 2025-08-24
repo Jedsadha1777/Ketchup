@@ -172,6 +172,11 @@
                     <input type="checkbox" id="show-images" checked style="margin-right: 4px;">
                     Images
                 </label>
+                <label style="color: white; font-size: 11px; display: flex; align-items: center;">
+                    <input type="checkbox" id="show-warppoints" checked style="margin-right: 4px;">
+                    Warppoints
+                </label>
+
             </div>
             <!-- </div> -->
 
@@ -195,6 +200,8 @@
 
     <script type="module">
         import { RuntimeViewer } from './runtime/RuntimeViewer.js';
+        import { OrthogonalPathfinder, lineIntersectsWalls } from './demo-map/pathfinder.js';
+        import { findNearestCorridorPosition, findPortalPath, createStraightLinePath } from './demo-map/pathfinding-utils.js';
 
         // =============================================================================
         // GLOBAL VARIABLES
@@ -210,6 +217,8 @@
         let showCorridors = true;
         let showWalls = true;
         let showWaypoints = true;
+        let showWarppoints = true;
+
         let isPanning = false;
         let lastPanX = 0;
         let lastPanY = 0;
@@ -242,7 +251,9 @@
                 corridors: true,
                 walls: true,
                 waypoints: true,
-                images: true
+                images: true,
+                warppoints: true
+
             };
 
             viewer.setVisibility = function (type, visible) {
@@ -258,7 +269,7 @@
                     if (mapType === 'corridor' && !this.visibilityState.corridors) shouldHide = true;
                     if (mapType === 'wall' && !this.visibilityState.walls) shouldHide = true;
                     if (mapType === 'waypoint' && !this.visibilityState.waypoints) shouldHide = true;
-                    if (mapType === 'warppoint' && !this.visibilityState.waypoints) shouldHide = true;  
+                    if (mapType === 'warppoint' && !this.visibilityState.warppoints) shouldHide = true; 
                     if ((objType === 'image' || objType === 'text') && !this.visibilityState.images) shouldHide = true;
 
                     // ซ่อนโดยการย้ายออกนอกหน้าจอ
@@ -286,9 +297,11 @@
             const originalRender = viewer.render.bind(viewer);
             viewer.render = function () {
                 originalRender();
+                drawWarppoints();
                 if (paths.length > 0) drawPaths();
                 if (showDebug) drawCorridorBuffers();
                 drawTempWaypoints();
+                
                 drawWaypointLabels(); //label บน waypoint อาจจะย้ายออกไปใส่แค่ debug ทีหลัง
             };
 
@@ -343,6 +356,8 @@
             showCorridors = document.getElementById('show-corridors').checked;
             showWalls = document.getElementById('show-walls').checked;
             showWaypoints = document.getElementById('show-waypoints').checked;
+            showWarppoints = document.getElementById('show-warppoints').checked;
+
             let showImages = document.getElementById('show-images').checked;
 
             document.getElementById('show-corridors').addEventListener('change', (e) => {
@@ -369,6 +384,11 @@
                 redrawHandler();
             });
 
+            document.getElementById('show-warppoints').addEventListener('change', (e) => {
+                showWarppoints = e.target.checked;
+                viewer.setVisibility('warppoints', showWarppoints);
+                redrawHandler();
+            });
 
             document.getElementById('from-waypoint').addEventListener('change', (e) => {
                 const selectedValue = e.target.value;
@@ -628,6 +648,42 @@
             ctx.restore();
         }
 
+        // =============================================================================
+        // WARPPOINT RENDERING
+        // =============================================================================
+        function drawWarppoints() {
+            if (!showWarppoints) return;
+            
+            const ctx = viewer.ctx;
+            ctx.save();
+            ctx.scale(viewer.zoom, viewer.zoom);
+            ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
+
+            waypoints.forEach(waypoint => {
+                 if (waypoint.type !== 'warppoint') return;
+                 
+                const radius = 8;  // ใช้ radius เหมือนใน MAP_OBJECT_STYLES.warppoint
+                
+                ctx.fillStyle = '#9333ea';  // MAP_OBJECT_STYLES.warppoint.color
+                ctx.strokeStyle = '#7e22ce';  // MAP_OBJECT_STYLES.warppoint.strokeColor
+                ctx.lineWidth = 2 / viewer.zoom;
+ 
+                 ctx.beginPath();
+                ctx.arc(waypoint.x, waypoint.y, radius, 0, Math.PI * 2);
+
+                 ctx.fill();
+                 ctx.stroke();
+ 
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(waypoint.x, waypoint.y, radius * 0.5, 0, Math.PI * 2);
+
+                ctx.fill();
+             });
+            
+            ctx.restore();
+        }
+
         function drawWaypointLabels() {
             const ctx = viewer.ctx;
 
@@ -636,6 +692,10 @@
             ctx.translate(viewer.panX / viewer.zoom, viewer.panY / viewer.zoom);
 
             waypoints.forEach(waypoint => {
+                // Skip if hidden by visibility settings
+                if (waypoint.type === 'warppoint' && !showWarppoints) return;
+                if (waypoint.type === 'waypoint' && !showWaypoints) return;
+
                 ctx.fillStyle = 'black';
                 ctx.font = `${12 / viewer.zoom}px Arial`;
                 
@@ -707,251 +767,7 @@
             }
         }
 
-        // =============================================================================
-        // PATHFINDING CLASS
-        // =============================================================================
-        class OrthogonalPathfinder {
-            constructor(corridors, walls, gridSize, objectSize = 20) {
-                this.corridors = corridors;
-                this.walls = walls;
-                this.gridSize = gridSize;
-                this.objectSize = objectSize;
-                this.createGrid();
-            }
-
-            createGrid() {
-                const bounds = this.getMapBounds();
-                const cols = Math.ceil(bounds.width / this.gridSize);
-                const rows = Math.ceil(bounds.height / this.gridSize);
-
-                this.grid = [];
-                this.minX = bounds.minX;
-                this.minY = bounds.minY;
-                this.cols = cols;
-                this.rows = rows;
-
-                for (let y = 0; y < rows; y++) {
-                    this.grid[y] = [];
-                    for (let x = 0; x < cols; x++) {
-                        const worldX = this.minX + x * this.gridSize + this.gridSize / 2;
-                        const worldY = this.minY + y * this.gridSize + this.gridSize / 2;
-                        const walkable = this.canPlaceObjectAt(worldX, worldY);
-
-                        this.grid[y][x] = {
-                            x, y, worldX, worldY, walkable,
-                            f: 0, g: 0, h: 0, parent: null
-                        };
-                    }
-                }
-
-                const walkableCount = this.grid.flat().filter(cell => cell.walkable).length;
-                console.log(`Walkable cells: ${walkableCount}/${cols * rows}`);
-            }
-
-            canPlaceObjectAt(centerX, centerY) {
-                if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
-
-                const halfSize = this.objectSize / 2;
-                if (this.objectSize < 5) {
-                    return this.corridors.some(corridor =>
-                        centerX >= corridor.x && centerX <= corridor.x + corridor.width &&
-                        centerY >= corridor.y && centerY <= corridor.y + corridor.height
-                    );
-                }
-
-                const corners = [
-                    { x: centerX - halfSize, y: centerY - halfSize },
-                    { x: centerX + halfSize, y: centerY - halfSize },
-                    { x: centerX - halfSize, y: centerY + halfSize },
-                    { x: centerX + halfSize, y: centerY + halfSize }
-                ];
-
-                return corners.every(corner =>
-                    this.corridors.some(corridor =>
-                        corner.x >= corridor.x && corner.x <= corridor.x + corridor.width &&
-                        corner.y >= corridor.y && corner.y <= corridor.y + corridor.height
-                    )
-                );
-            }
-
-            isPositionClearOfWalls(centerX, centerY) {
-                const halfSize = this.objectSize / 2;
-                const objectBounds = {
-                    left: centerX - halfSize,
-                    right: centerX + halfSize,
-                    top: centerY - halfSize,
-                    bottom: centerY + halfSize
-                };
-
-                return !this.walls.some(wall => {
-                    const wallBounds = {
-                        left: wall.x,
-                        right: wall.x + wall.width,
-                        top: wall.y,
-                        bottom: wall.y + wall.height
-                    };
-
-                    return objectBounds.left < wallBounds.right &&
-                        objectBounds.right > wallBounds.left &&
-                        objectBounds.top < wallBounds.bottom &&
-                        objectBounds.bottom > wallBounds.top;
-                });
-            }
-
-            getMapBounds() {
-                const allObjects = [...this.corridors, ...this.walls];
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-                allObjects.forEach(obj => {
-                    minX = Math.min(minX, obj.x);
-                    minY = Math.min(minY, obj.y);
-                    maxX = Math.max(maxX, obj.x + obj.width);
-                    maxY = Math.max(maxY, obj.y + obj.height);
-                });
-
-                return {
-                    minX: minX - this.gridSize * 2,
-                    minY: minY - this.gridSize * 2,
-                    width: maxX - minX + this.gridSize * 4,
-                    height: maxY - minY + this.gridSize * 4
-                };
-            }
-
-            worldToGrid(worldX, worldY) {
-                return {
-                    x: Math.floor((worldX - this.minX + this.gridSize / 2) / this.gridSize),
-                    y: Math.floor((worldY - this.minY + this.gridSize / 2) / this.gridSize)
-                };
-            }
-
-            getNode(x, y) {
-                return (x >= 0 && x < this.cols && y >= 0 && y < this.rows) ? this.grid[y][x] : null;
-            }
-
-            getNeighbors(node) {
-                const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-                return dirs
-                    .map(([dx, dy]) => this.getNode(node.x + dx, node.y + dy))
-                    .filter(neighbor => neighbor && neighbor.walkable);
-            }
-
-            heuristic(a, b) {
-                return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-            }
-
-            findPath(startWorld, endWorld) {
-                if (!this.canPlaceObjectAt(startWorld.x, startWorld.y) ||
-                    !this.canPlaceObjectAt(endWorld.x, endWorld.y)) {
-                    console.log('Cannot place object at start or end waypoint');
-                    return null;
-                }
-
-                const start = this.worldToGrid(startWorld.x, startWorld.y);
-                const end = this.worldToGrid(endWorld.x, endWorld.y);
-                const startNode = this.getNode(start.x, start.y);
-                const endNode = this.getNode(end.x, end.y);
-
-                if (!startNode?.walkable || !endNode?.walkable) {
-                    console.log('Start or end node not walkable');
-                    return null;
-                }
-
-                this.grid.flat().forEach(node => {
-                    node.f = node.g = node.h = 0;
-                    node.parent = null;
-                });
-
-                const openSet = [startNode];
-                const closedSet = new Set();
-
-                startNode.g = 0;
-                startNode.h = this.heuristic(startNode, endNode);
-                startNode.f = startNode.h;
-
-                while (openSet.length > 0) {
-                    let current = openSet[0];
-                    let currentIndex = 0;
-
-                    for (let i = 1; i < openSet.length; i++) {
-                        if (openSet[i].f < current.f ||
-                            (openSet[i].f === current.f && openSet[i].h < current.h)) {
-                            current = openSet[i];
-                            currentIndex = i;
-                        }
-                    }
-
-                    openSet.splice(currentIndex, 1);
-                    closedSet.add(current);
-
-                    if (current === endNode) {
-                        const path = [];
-                        let temp = current;
-                        while (temp) {
-                            path.push({ x: temp.worldX, y: temp.worldY });
-                            temp = temp.parent;
-                        }
-                        return this.optimizePath(path.reverse());
-                    }
-
-                    this.getNeighbors(current).forEach(neighbor => {
-                        if (closedSet.has(neighbor)) return;
-
-                        let moveCost = 1;
-                        const toEndX = endNode.x - current.x;
-                        const toEndY = endNode.y - current.y;
-                        const moveX = neighbor.x - current.x;
-                        const moveY = neighbor.y - current.y;
-
-                        if ((toEndX > 0 && moveX > 0) || (toEndX < 0 && moveX < 0) ||
-                            (toEndY > 0 && moveY > 0) || (toEndY < 0 && moveY < 0)) {
-                            moveCost = 0.99;
-                        }
-
-                        const tentativeG = current.g + moveCost;
-
-                        if (!openSet.includes(neighbor)) {
-                            openSet.push(neighbor);
-                        } else if (tentativeG >= neighbor.g) {
-                            return;
-                        }
-
-                        neighbor.parent = current;
-                        neighbor.g = tentativeG;
-                        neighbor.h = this.heuristic(neighbor, endNode);
-                        neighbor.f = neighbor.g + neighbor.h;
-                    });
-                }
-
-                console.log('No path found');
-                return null;
-            }
-
-            optimizePath(path) {
-                if (path.length <= 2) return path;
-
-                const simplified = [path[0]];
-                for (let i = 1; i < path.length - 1; i++) {
-                    const prev = path[i - 1];
-                    const curr = path[i];
-                    const next = path[i + 1];
-
-                    const dir1 = {
-                        x: Math.sign(curr.x - prev.x),
-                        y: Math.sign(curr.y - prev.y)
-                    };
-                    const dir2 = {
-                        x: Math.sign(next.x - curr.x),
-                        y: Math.sign(next.y - curr.y)
-                    };
-
-                    if (dir1.x !== dir2.x || dir1.y !== dir2.y) {
-                        simplified.push(curr);
-                    }
-                }
-                simplified.push(path[path.length - 1]);
-                return simplified;
-            }
-        }
+        
 
         // =============================================================================
         // DATA EXTRACTION AND MANAGEMENT
@@ -1037,163 +853,6 @@
             document.getElementById('zoom-level').textContent = zoom + '%';
         }
 
-        // =============================================================================
-        // PATHFINDING UTILITIES
-        // =============================================================================
-        function findNearestCorridorPosition(waypoint) {
-            if (corridors.length === 0) return waypoint;
-
-            const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
-            let nearestPos = waypoint;
-            let minDistance = Infinity;
-            const margin = objectSize + Math.max(objectSize * 0.5, objectSize * 0.3);
-
-            for (const corridor of corridors) {
-                // เช็คว่า corridor มีขนาดพอสำหรับ margin นี้ไหม
-                if (corridor.width < margin * 2 || corridor.height < margin * 2) {
-                    continue; // ข้าม corridor ที่เล็กเกินไป
-                }
-
-                // หาจุดบนขอบ corridor ที่ใกล้ waypoint ที่สุด
-                const edges = [
-                    {
-                        x: Math.max(corridor.x + margin, Math.min(corridor.x + corridor.width - margin, waypoint.x)),
-                        y: corridor.y + margin
-                    }, // top edge
-                    {
-                        x: Math.max(corridor.x + margin, Math.min(corridor.x + corridor.width - margin, waypoint.x)),
-                        y: corridor.y + corridor.height - margin
-                    }, // bottom edge
-                    {
-                        x: corridor.x + margin,
-                        y: Math.max(corridor.y + margin, Math.min(corridor.y + corridor.height - margin, waypoint.y))
-                    }, // left edge
-                    {
-                        x: corridor.x + corridor.width - margin,
-                        y: Math.max(corridor.y + margin, Math.min(corridor.y + corridor.height - margin, waypoint.y))
-                    } // right edge
-                ];
-
-                for (const edge of edges) {
-                    if (pathfinder.canPlaceObjectAt(edge.x, edge.y)) {
-                        const distance = Math.sqrt(
-                            Math.pow(waypoint.x - edge.x, 2) +
-                            Math.pow(waypoint.y - edge.y, 2)
-                        );
-
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            nearestPos = edge;
-                        }
-                    }
-                }
-            }
-
-            return nearestPos;
-        }
-
-        function findPortalPath(fromPos, toPos, pathfinder) {
-            // ใช้ BFS หา path ผ่าน warppoint network
-            const queue = [{ pos: fromPos, path: [], visitedPortals: new Set(), teleportSegments: [] }];
-            const visited = new Set();
-            
-            while (queue.length > 0) {
-                const { pos, path, visitedPortals, teleportSegments } = queue.shift();
-                
-                // ลองหา path ตรงไปยัง destination
-                const directPath = pathfinder.findPath(pos, toPos);
-                if (directPath) {
-                    const finalPath = [...path, ...directPath];
-                    finalPath.teleportSegments = teleportSegments;
-                    return finalPath;
-                }
-                
-                // หา warppoint ที่เดินไปถึงได้
-                const reachableWarps = waypoints.filter(w => 
-                    w.type === 'warppoint' && 
-                    w.portalId && 
-                    !visitedPortals.has(w.id) &&
-                    pathfinder.findPath(pos, w)
-                );
-                
-                for (const warp1 of reachableWarps) {
-                    // หา warppoint คู่ที่มี portalId เดียวกัน
-                    const warp2Options = waypoints.filter(w => 
-                        w.type === 'warppoint' && 
-                        w.portalId === warp1.portalId && 
-                        w.id !== warp1.id &&
-                        !visitedPortals.has(w.id)
-                    );
-                    
-                    for (const warp2 of warp2Options) {
-                        const pathToWarp1 = pathfinder.findPath(pos, warp1);
-                        if (pathToWarp1) {
-                            const newVisited = new Set([...visitedPortals, warp1.id, warp2.id]);
-                            const newPath = [...path, ...pathToWarp1, warp2];
-                            const newTeleportSegments = [...teleportSegments, newPath.length - 2]; // warp1→warp2
-                            const stateKey = `${warp2.x},${warp2.y}`;
-                            
-                            if (!visited.has(stateKey)) {
-                                visited.add(stateKey);
-                                
-                                queue.push({ 
-                                    pos: warp2, 
-                                    path: newPath, 
-                                    visitedPortals: newVisited,
-                                    teleportSegments: newTeleportSegments
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            
-            return null;
-        }
-
-
-
-
-        // =============================================================================
-        // STRAIGHT LINE UTILITIES (REFACTORED FROM createAdjustmentPath)
-        // =============================================================================
-        function createStraightLinePath(original, adjusted) {
-            if (!original || !adjusted) return [];
-
-            const distance = Math.sqrt(
-                Math.pow(original.x - adjusted.x, 2) +
-                Math.pow(original.y - adjusted.y, 2)
-            );
-
-            if (distance <= 1) return [];
-
-            const deltaX = adjusted.x - original.x;
-            const deltaY = adjusted.y - original.y;
-            const sameX = Math.abs(deltaX) < 1;
-            const sameY = Math.abs(deltaY) < 1;
-
-            if (sameX && sameY) {
-                return [];
-            } else if (sameX || sameY) {
-                return !lineIntersectsWalls(original, adjusted) ? [original, adjusted] : [];
-            } else {
-                const midPoint1 = { x: adjusted.x, y: original.y };
-                const midPoint2 = { x: original.x, y: adjusted.y };
-                const path1Valid = !lineIntersectsWalls(original, midPoint1) && !lineIntersectsWalls(midPoint1, adjusted);
-                const path2Valid = !lineIntersectsWalls(original, midPoint2) && !lineIntersectsWalls(midPoint2, adjusted);
-
-                if (path1Valid && path2Valid) {
-                    const useHorizontalFirst = Math.abs(deltaX) >= Math.abs(deltaY);
-                    return useHorizontalFirst ? [original, midPoint1, adjusted] : [original, midPoint2, adjusted];
-                } else if (path1Valid) {
-                    return [original, midPoint1, adjusted];
-                } else if (path2Valid) {
-                    return [original, midPoint2, adjusted];
-                }
-            }
-
-            return [];
-        }
 
         // =============================================================================
         // RENDERING FUNCTIONS
@@ -1241,7 +900,7 @@
             ctx.setLineDash([3 / viewer.zoom, 3 / viewer.zoom]);
 
             // Use refactored straight line logic
-            const linePath = createStraightLinePath(original, adjusted);
+            const linePath = createStraightLinePath(original, adjusted, walls);
 
             if (linePath.length > 1) {
                 ctx.beginPath();
@@ -1304,7 +963,7 @@
                     pathCtx.moveTo(currentPoint.x - bounds.minX, currentPoint.y - bounds.minY);
                 } else {
                     // เส้นปกติ
-                    if (!lineIntersectsWalls(prevPoint, currentPoint)) {
+                    if (!lineIntersectsWalls(prevPoint, currentPoint, walls)) {
                         pathCtx.lineTo(currentPoint.x - bounds.minX, currentPoint.y - bounds.minY);
                     } else {
                         pathCtx.moveTo(currentPoint.x - bounds.minX, currentPoint.y - bounds.minY);
@@ -1417,6 +1076,8 @@
                 const pathfinder = new OrthogonalPathfinder(corridors, walls, gridSize, objectSize);
                 ctx.fillStyle = 'rgba(0, 0, 255, 1)';
 
+                
+
                 for (let y = 0; y < pathfinder.rows; y++) {
                     for (let x = 0; x < pathfinder.cols; x++) {
                         if (pathfinder.grid[y][x].walkable) {
@@ -1487,26 +1148,6 @@
         }
 
         // =============================================================================
-        // COLLISION DETECTION
-        // =============================================================================
-        function lineIntersectsWalls(point1, point2) {
-            const samples = 20;
-            for (let i = 0; i <= samples; i++) {
-                const t = i / samples;
-                const checkX = point1.x + (point2.x - point1.x) * t;
-                const checkY = point1.y + (point2.y - point1.y) * t;
-
-                if (walls.some(wall =>
-                    checkX >= wall.x && checkX <= wall.x + wall.width &&
-                    checkY >= wall.y && checkY <= wall.y + wall.height
-                )) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        // =============================================================================
         // PUBLIC API FUNCTIONS
         // =============================================================================
         window.loadFile = function () {
@@ -1526,6 +1167,10 @@
                     walls = [];
                     waypoints = [];
                     paths = [];
+                    showDebug = false;
+                    contextMenuVisible = false;
+                    isPanning = false;
+                    objectSize = 5;  
                     
                     // เคลียร์ temp waypoints
                     window.tempFromPoint = null;
@@ -1538,7 +1183,19 @@
                     // ลบ temp options
                     removeTemporaryOptions('temp_from_');
                     removeTemporaryOptions('temp_to_');
+
+                    // Clear originalPositions cache
+                    if (viewer.objects.originalPositions) {
+                        delete viewer.objects.originalPositions;
+                    }
+
+
+
+                    document.getElementById('object-size').value = 5;
+                    document.getElementById('size-value').textContent = '5px';
                     
+                    hideContextMenu();       
+
                     const mapData = JSON.parse(e.target.result);
                     viewer.loadMapData(mapData);
                     extractCorridorsWallsAndWaypoints();
@@ -1547,6 +1204,7 @@
                     viewer.setVisibility('corridors', document.getElementById('show-corridors').checked);
                     viewer.setVisibility('walls', document.getElementById('show-walls').checked);
                     viewer.setVisibility('waypoints', document.getElementById('show-waypoints').checked);
+                    viewer.setVisibility('warppoints', document.getElementById('show-warppoints').checked);
                     viewer.setVisibility('images', document.getElementById('show-images').checked);
                     updateInfo();
                 } catch (error) {
@@ -1620,11 +1278,11 @@
 
             const fromPos = pathfinder.canPlaceObjectAt(fromWaypoint.x, fromWaypoint.y)
                 ? fromWaypoint
-                : findNearestCorridorPosition(fromWaypoint);
+                : findNearestCorridorPosition(fromWaypoint, corridors, walls, gridSize, objectSize);
 
             const toPos = pathfinder.canPlaceObjectAt(toWaypoint.x, toWaypoint.y)
                 ? toWaypoint
-                : findNearestCorridorPosition(toWaypoint);
+                : findNearestCorridorPosition(toWaypoint, corridors, walls, gridSize, objectSize);
 
             const path = pathfinder.findPath(fromPos, toPos);
             if (path) {
@@ -1641,7 +1299,7 @@
                 console.log(`Found path from ${fromWaypointId} to ${toWaypointId}`);
             } else {
                 // ลองหา portal path
-                const portalPath = findPortalPath(fromPos, toPos, pathfinder);
+                const portalPath = findPortalPath(fromPos, toPos, pathfinder, waypoints);
                 if (portalPath) {
                     paths.push({
                         from: fromWaypointId,
@@ -1671,6 +1329,7 @@
             // Remove temp options and clear temp points
             removeTemporaryOptions('temp_from_');
             removeTemporaryOptions('temp_to_');
+
             window.tempFromPoint = null;
             window.tempToPoint = null;
 
