@@ -64,12 +64,21 @@ export function findPortalPath(fromPos, toPos, pathfinder, waypoints) {
             return finalPath;
         }
         
+        // หา warppoints ที่เข้าถึงได้
         const reachableWarps = waypoints.filter(w => 
             w.type === 'warppoint' && 
             w.portalId && 
             !visitedPortals.has(w.id) &&
             pathfinder.findPath(pos, w)
         );
+
+        // เรียงตามระยะทางจากตำแหน่งปัจจุบัน
+        reachableWarps.sort((a, b) => {
+            const distA = Math.sqrt(Math.pow(pos.x - a.x, 2) + Math.pow(pos.y - a.y, 2));
+            const distB = Math.sqrt(Math.pow(pos.x - b.x, 2) + Math.pow(pos.y - b.y, 2));
+            return distA - distB;
+        });
+
         
         for (const warp1 of reachableWarps) {
             const warp2Options = waypoints.filter(w => 

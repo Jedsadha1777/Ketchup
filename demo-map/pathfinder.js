@@ -39,32 +39,6 @@ export class OrthogonalPathfinder {
         console.log(`Walkable cells: ${walkableCount}/${cols * rows}`);
     }
 
-    // canPlaceObjectAt(centerX, centerY) {
-    //     if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
-
-    //     const halfSize = this.objectSize / 2;
-    //     if (this.objectSize < 5) {
-    //         return this.corridors.some(corridor =>
-    //             centerX >= corridor.x && centerX <= corridor.x + corridor.width &&
-    //             centerY >= corridor.y && centerY <= corridor.y + corridor.height
-    //         );
-    //     }
-
-    //     const corners = [
-    //         { x: centerX - halfSize, y: centerY - halfSize },
-    //         { x: centerX + halfSize, y: centerY - halfSize },
-    //         { x: centerX - halfSize, y: centerY + halfSize },
-    //         { x: centerX + halfSize, y: centerY + halfSize }
-    //     ];
-
-    //     return corners.every(corner =>
-    //         this.corridors.some(corridor =>
-    //             corner.x >= corridor.x && corner.x <= corridor.x + corridor.width &&
-    //             corner.y >= corridor.y && corner.y <= corridor.y + corridor.height
-    //         )
-    //     );
-    // }
-
     canPlaceObjectAt(centerX, centerY) {
         if (!this.isPositionClearOfWalls(centerX, centerY)) return false;
 
@@ -349,31 +323,6 @@ export class OrthogonalPathfinder {
         simplified.push(path[path.length - 1]);
         return simplified;
     }
-
-    // smoothPath(path) {
-    //     if (path.length <= 2) return path;
-
-    //     const smoothed = [path[0]];
-    //     let i = 0;
-
-    //     while (i < path.length - 1) {
-    //         let furthest = i + 1;
-
-    //         // หาจุดไกลสุดที่ลากเส้นตรงได้
-    //         for (let j = i + 2; j < path.length; j++) {
-    //             if (this.canDrawDirectLine(path[i], path[j])) {
-    //                 furthest = j;
-    //             } else {
-    //                 break;
-    //             }
-    //         }
-
-    //         smoothed.push(path[furthest]);
-    //         i = furthest;
-    //     }
-
-    //     return smoothed;
-    // }
 
     smoothPath(path) {
         if (path.length <= 2) return path;
