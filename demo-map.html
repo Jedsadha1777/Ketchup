@@ -299,7 +299,10 @@
             const canvas = document.getElementById('runtime-canvas');
 
              canvas.addEventListener('wheel', (e) => {
+
                 e.preventDefault();
+                e.stopPropagation();
+
                 const rect = canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
@@ -307,11 +310,12 @@
                 const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
                 const newZoom = Math.max(0.8, Math.min(5, viewer.zoom * zoomFactor));
 
-                viewer.panX = mouseX - (mouseX - viewer.panX) * (newZoom / viewer.zoom);
-                viewer.panY = mouseY - (mouseY - viewer.panY) * (newZoom / viewer.zoom);
+                viewer.panX += (mouseX - viewer.panX) * (1 - newZoom / viewer.zoom);
+                viewer.panY += (mouseY - viewer.panY) * (1 - newZoom / viewer.zoom);
                 viewer.zoom = newZoom;
 
-                setTimeout(() => viewer.render(), 10);
+                viewer.render();
+                updateInfo();
             });
 
 
@@ -658,22 +662,31 @@
         // PAN HANDLING
         // =============================================================================
         function handlePanStart(e) {
-            if (e.button === 0 || e.button === 1) { // Left-click หรือ Middle-click
-                e.preventDefault();
-                isPanning = true;
-                lastPanX = e.clientX;
-                lastPanY = e.clientY;
-                e.target.style.cursor = 'grabbing';
-            }
+            if (e.button === 0) { // Left-click only
+                 e.preventDefault();
+                 e.stopPropagation();
+                 isPanning = true;
+                 lastPanX = e.clientX;
+                 lastPanY = e.clientY;
+                 const canvas = document.getElementById('runtime-canvas');
+                 canvas.style.cursor = 'grabbing';
+
+             }
+
         }
 
         function handlePanMove(e) {
             if (!isPanning) {
-                e.target.style.cursor = 'grab';
+                const canvas = document.getElementById('runtime-canvas');
+                canvas.style.cursor = 'grab';
+
+
                 return;
             }
 
             e.preventDefault();
+            e.stopPropagation();
+
             const deltaX = e.clientX - lastPanX;
             const deltaY = e.clientY - lastPanY;
 
@@ -686,8 +699,11 @@
 
         function handlePanEnd(e) {
             if (isPanning) {
+                e.preventDefault();
                 isPanning = false;
-                e.target.style.cursor = 'default';
+                const canvas = document.getElementById('runtime-canvas');
+                canvas.style.cursor = 'grab';
+
             }
         }
 
@@ -1449,6 +1465,18 @@
                     ctx.beginPath();
                     ctx.arc(waypoint.x, waypoint.y, 3 / viewer.zoom, 0, Math.PI * 2);
                     ctx.fill();
+
+                     // Draw waypoint label
+                    ctx.fillStyle = 'black';
+                    ctx.font = `${12 / viewer.zoom}px Arial`;
+                    let displayText = '';
+                    if (waypoint.type === 'warppoint' && waypoint.portalId) {
+                        displayText = waypoint.label ? waypoint.label : waypoint.portalId;
+                    } else if (waypoint.label) {
+                        displayText = waypoint.label;
+                    } else {
+                        displayText = waypoint.id;
+                    }
                     
                     ctx.fillText(displayText, waypoint.x + halfSize + 5, waypoint.y - halfSize - 5);
                 });
