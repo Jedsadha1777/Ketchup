@@ -13,6 +13,7 @@ import { CircleRenderer } from '../renderers/CircleRenderer.js';
 import { MapObjectRenderer } from '../renderers/MapObjectRenderer.js';
 import { WaypointRenderer } from '../renderers/WaypointRenderer.js';
 import { WarpPointRenderer } from '../renderers/WarpPointRenderer.js';
+
 import { ImageRenderer } from '../renderers/ImageRenderer.js';
 import { TextRenderer } from '../renderers/TextRenderer.js';
 
@@ -74,8 +75,6 @@ export class RuntimeViewer extends CanvasEngine {
         this.renderers.register(new TextRenderer());
         this.renderers.register(new CircleRenderer());
         this.renderers.register(new RectangleRenderer());
-        this.renderers.register(new WarpPointRenderer());
-
     }
 
     setupRuntimeEventListeners() {

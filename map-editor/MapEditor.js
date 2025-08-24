@@ -436,15 +436,68 @@ export class MapEditor extends CanvasEngine {
     }
 
 
+    getVisualBounds(index) {
+        const bounds = this.objects.getBounds(index);
+        const extra = this.objects.extra[index];
+        const rotation = extra?.rotation || 0;
+        
+        if (rotation === 0) {
+            return bounds;
+        }
+        
+        // คำนวณ rotated bounding box
+        const centerX = bounds.x + bounds.width / 2;
+        const centerY = bounds.y + bounds.height / 2;
+        const rad = (rotation * Math.PI) / 180;
+        
+        // หาจุด 4 มุมหลัง rotation
+        const corners = [
+            { x: bounds.x, y: bounds.y },
+            { x: bounds.x + bounds.width, y: bounds.y },
+            { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+            { x: bounds.x, y: bounds.y + bounds.height }
+        ];
+        
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        
+        for (const corner of corners) {
+            // Rotate relative to center
+            const relX = corner.x - centerX;
+            const relY = corner.y - centerY;
+            const rotX = relX * Math.cos(rad) - relY * Math.sin(rad);
+            const rotY = relX * Math.sin(rad) + relY * Math.cos(rad);
+            const worldX = centerX + rotX;
+            const worldY = centerY + rotY;
+            
+            minX = Math.min(minX, worldX);
+            minY = Math.min(minY, worldY);
+            maxX = Math.max(maxX, worldX);
+            maxY = Math.max(maxY, worldY);
+        }
+        
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    }
 
-    addDirtyRect(bounds) {
+
+    addDirtyRect(bounds, index = null) {
+        // ถ้ามี index ให้ใช้ visual bounds แทน
+        const actualBounds = index !== null && index !== undefined 
+            ? this.getVisualBounds(index) 
+            : bounds;
+            
         const dpr = this.dpr || window.devicePixelRatio || 1;
 
         // world -> screen (CSS px)
-        const sx_css = (bounds.x * this.zoom) + this.panX;
-        const sy_css = (bounds.y * this.zoom) + this.panY;
-        const sw_css = (bounds.width * this.zoom);
-        const sh_css = (bounds.height * this.zoom);
+        const sx_css = (actualBounds.x * this.zoom) + this.panX;
+        const sy_css = (actualBounds.y * this.zoom) + this.panY;
+        const sw_css = (actualBounds.width * this.zoom);
+        const sh_css = (actualBounds.height * this.zoom);
 
         const PAD_CSS = 10;
         // แปลงเป็น device px

@@ -495,6 +495,7 @@ export class SelectTool extends ITool {
             const bounds = ctx.objects.getBounds(selectedIndex);
             const rotation = ctx.objects.extra[selectedIndex]?.rotation || 0;
             
+            
             if (rotation !== 0) {
                 ctx.drawRotatedResizeHandles(bounds, rotation);
             } else {
@@ -505,16 +506,30 @@ export class SelectTool extends ITool {
         // Draw selection indicators for multi-select
         if (ctx.objects.hasMultipleSelected()) {
             const selectedIndices = ctx.objects.getSelectedIndices();
-            ctx.ctx.strokeStyle = '#0066cc';
-            ctx.ctx.lineWidth = 2 / ctx.zoom;
-            ctx.ctx.setLineDash([5 / ctx.zoom, 5 / ctx.zoom]);
             
             for (const index of selectedIndices) {
                 const bounds = ctx.objects.getBounds(index);
-                ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+                const rotation = ctx.objects.extra[index]?.rotation || 0;
+                
+                ctx.ctx.save();
+                ctx.ctx.strokeStyle = '#0066cc';
+                ctx.ctx.lineWidth = 2 / ctx.zoom;
+                ctx.ctx.setLineDash([5 / ctx.zoom, 5 / ctx.zoom]);
+                
+                if (rotation !== 0) {
+                    const centerX = bounds.x + bounds.width / 2;
+                    const centerY = bounds.y + bounds.height / 2;
+                    ctx.ctx.translate(centerX, centerY);
+                    ctx.ctx.rotate((rotation * Math.PI) / 180);
+                    ctx.ctx.translate(-bounds.width / 2, -bounds.height / 2);
+                    ctx.ctx.strokeRect(0, 0, bounds.width, bounds.height);
+                } else {
+                    ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+                }
+                
+                ctx.ctx.setLineDash([]);
+                ctx.ctx.restore();
             }
-            
-            ctx.ctx.setLineDash([]);
         }
     }
 }

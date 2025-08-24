@@ -28,10 +28,8 @@ export class TextRenderer extends ObjectRenderer {
             ctx.translate(centerX, centerY);
             ctx.rotate((rotation * Math.PI) / 180);
             ctx.translate(-obj.width / 2, -obj.height / 2);
-            // Adjust coordinates for rotated drawing
-            obj = { ...obj, x: 0, y: 0 };
+            // ลบบรรทัดนี้ออก: obj = { ...obj, x: 0, y: 0 };
         }
-        
         
         // Set font properties
         ctx.font = `${extra.fontStyle || 'normal'} ${extra.fontWeight || 'normal'} ${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
@@ -40,29 +38,23 @@ export class TextRenderer extends ObjectRenderer {
         ctx.textBaseline = extra.textBaseline || 'top';
 
         const padding = extra.padding || 4;
-        const bounds = { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
-       
-        // Only wrap if text box is manually resized 
-        // let lines;
-        // if (extra.isManuallyResized) {
-        //     const maxWidth = Math.max(bounds.width - (padding * 2), 20);
-        //     lines = TextUtils.wrapTextToLines(extra.text, maxWidth, ctx);
-        // } else {
-        //     lines = extra.text.split('\n');
-        // }
-        
+        // ใช้ coordinates ที่ถูกต้องตามสถานะ rotation
+        const drawX = rotation !== 0 ? 0 : obj.x;
+        const drawY = rotation !== 0 ? 0 : obj.y;
+        const bounds = { x: drawX, y: drawY, width: obj.width, height: obj.height };
+    
         // Always wrap text to prevent side overflow
         const maxWidth = Math.max(bounds.width - (padding * 2), 20);
         const lines = TextUtils.wrapTextToLines(extra.text, maxWidth, ctx);
 
-        let textX = obj.x + padding;
-        let textY = obj.y + padding;
+        let textX = drawX + padding;
+        let textY = drawY + padding;
         
         // Adjust X position based on text alignment
         if (extra.textAlign === 'center') {
-            textX = obj.x + obj.width / 2;
+            textX = drawX + obj.width / 2;
         } else if (extra.textAlign === 'right') {
-            textX = obj.x + obj.width - padding;
+            textX = drawX + obj.width - padding;
         }
         
         // Draw text lines
@@ -70,7 +62,6 @@ export class TextRenderer extends ObjectRenderer {
         
         for (let i = 0; i < lines.length; i++) {
             const y = textY + (i * lineHeight);
-            // Draw all lines even if they overflow 
             ctx.fillText(lines[i], textX, y);
         }
         

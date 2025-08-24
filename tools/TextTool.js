@@ -64,11 +64,30 @@ export class TextTool extends ITool {
         const extra = ctx.objects.extra[index];
         if (!extra || !extra.text) return -1;
         
+        const rotation = extra.rotation || 0;
+        let transformedClickPos = clickPos;
+        
+        // Transform click position if text is rotated
+        if (rotation !== 0) {
+            const centerX = bounds.x + bounds.width / 2;
+            const centerY = bounds.y + bounds.height / 2;
+            const rad = (-rotation * Math.PI) / 180; // Inverse rotation
+            
+            // Transform mouse position to text's local coordinate system
+            const localX = (clickPos.x - centerX) * Math.cos(rad) - (clickPos.y - centerY) * Math.sin(rad);
+            const localY = (clickPos.x - centerX) * Math.sin(rad) + (clickPos.y - centerY) * Math.cos(rad);
+            
+            transformedClickPos = {
+                x: centerX + localX,
+                y: centerY + localY
+            };
+        }
+        
         const padding = extra.padding || 4;
         const lineHeight = (extra.fontSize || 16) * (extra.lineHeight || 1.2);
         
-        // Calculate which line was clicked
-        const relativeY = clickPos.y - (bounds.y + padding);
+        // Calculate which line was clicked (ใช้ transformed position)
+        const relativeY = transformedClickPos.y - (bounds.y + padding);
         const clickedLineIndex = Math.floor(relativeY / lineHeight);
         
         // Get wrapped lines
@@ -86,7 +105,7 @@ export class TextTool extends ITool {
         }
         
         const clickedLine = lines[clickedLineIndex];
-        const relativeX = clickPos.x - (bounds.x + padding);
+        const relativeX = transformedClickPos.x - (bounds.x + padding); // ใช้ transformed position
         
         // Find closest character position in the line
         let bestDistance = Infinity;
@@ -615,7 +634,6 @@ export class TextTool extends ITool {
             const extra = ctx.objects.extra[this.editingIndex];
             const rotation = extra?.rotation || 0;
 
-
             ctx.ctx.save();
             
             if (rotation !== 0) {
@@ -638,6 +656,11 @@ export class TextTool extends ITool {
                 ctx.ctx.fillRect(bounds.width - cornerSize / 2, -cornerSize / 2, cornerSize, cornerSize);
                 ctx.ctx.fillRect(-cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
                 ctx.ctx.fillRect(bounds.width - cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
+                
+                // วาด cursor ใน transformation context เดียวกัน
+                if (this.cursorVisible && extra) {
+                    this.drawCursor(ctx, bounds, extra, rotation);
+                }
             } else {
                 ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
                 ctx.ctx.lineWidth = 2 / ctx.zoom;
@@ -651,40 +674,55 @@ export class TextTool extends ITool {
                 ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
                 ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
                 ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
+                
+                // วาด cursor แบบปกติ
+                if (this.cursorVisible && extra) {
+                    this.drawCursor(ctx, bounds, extra, rotation);
+                }
             }
             
             ctx.ctx.restore();
-
-
-            if (this.cursorVisible && extra) {
-                this.drawCursor(ctx, bounds, extra);
-            }
         }
     }
 
-    drawCursor(ctx, bounds, extra) {
+    drawCursor(ctx, bounds, extra, rotation = 0) {
         ctx.ctx.font = `${extra.fontStyle || 'normal'} ${extra.fontWeight || 'normal'} ${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
         
         const padding = extra.padding || 4;
-        let textX = bounds.x + padding;
-        const textY = bounds.y + padding;
+        
+        // ใช้พิกัดที่ถูกต้องตาม rotation
+        let baseX, baseY;
+        if (rotation !== 0) {
+            // ใช้ local coordinates (0,0) เมื่อมี rotation
+            baseX = 0;
+            baseY = 0;
+        } else {
+            // ใช้พิกัดจริงเมื่อไม่มี rotation  
+            baseX = bounds.x;
+            baseY = bounds.y;
+        }
+        
+        let textX = baseX + padding;
+        const textY = baseY + padding;
         
         if (extra.textAlign === 'center') {
-            textX = bounds.x + bounds.width / 2;
+            textX = baseX + bounds.width / 2;
         } else if (extra.textAlign === 'right') {
-            textX = bounds.x + bounds.width - padding;
+            textX = baseX + bounds.width - padding;
         }
 
-        const textBeforeCursor = this.editingText.substring(0, this.cursorPosition);
-        const lines = textBeforeCursor.split('\n');
-        const currentLine = lines[lines.length - 1];
+        // คำนวณ cursor position ตาม text wrapping
+        const maxWidth = Math.max(bounds.width - (padding * 2), 20);
+        const wrappedText = TextUtils.wrapText(this.editingText.substring(0, this.cursorPosition), maxWidth, ctx.ctx);
+        const lines = wrappedText.split('\n');
+        const currentLine = lines[lines.length - 1] || '';
         const lineHeight = (extra.fontSize || 16) * (extra.lineHeight || 1.2);
         
         const textMetrics = ctx.ctx.measureText(currentLine);
         let cursorX = textX;
         
         if (extra.textAlign === 'center') {
-            cursorX = textX + textMetrics.width - ctx.ctx.measureText(lines[lines.length - 1]).width / 2;
+            cursorX = textX + textMetrics.width - ctx.ctx.measureText(currentLine).width / 2;
         } else if (extra.textAlign === 'right') {
             cursorX = textX - textMetrics.width;
         } else {

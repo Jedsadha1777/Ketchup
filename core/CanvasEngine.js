@@ -416,26 +416,15 @@ export class CanvasEngine {
         
         for (const handle of Object.values(handles)) {
             // Draw white square with blue border
-            // this.ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
-            // this.ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
-
-            const centerX = handle.x + handle.width / 2;
-            const centerY = handle.y + handle.height / 2;
-            
-            this.ctx.save();
-            this.ctx.translate(centerX, centerY);
-            this.ctx.rotate((rotation * Math.PI) / 180);
-            this.ctx.fillRect(-handle.width / 2, -handle.height / 2, handle.width, handle.height);
-            this.ctx.strokeRect(-handle.width / 2, -handle.height / 2, handle.width, handle.height);
-            this.ctx.restore();
-
+            this.ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
+            this.ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
         }
         
-        // // Reset shadow
-        // this.ctx.shadowColor = 'transparent';
-        // this.ctx.shadowBlur = 0;
-        // this.ctx.shadowOffsetX = 0;
-        // this.ctx.shadowOffsetY = 0;
+        // Reset shadow
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
         this.ctx.restore();
     }
 
