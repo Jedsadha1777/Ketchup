@@ -134,7 +134,7 @@ export class InspectorPanel {
                 return `<div class="inspector-field">
                     <div class="inspector-label">Text Content</div>
                     <textarea class="inspector-input" id="inspector-text" rows="3" placeholder="Enter text content...">${obj.extra?.text || ''}</textarea>
-                    <button type="button" class="inspector-input" id="auto-fit-text" style="background: #0066cc; color: white; border: none; padding: 4px 8px; border-radius: 3px; font-size: 11px; margin-top: 4px;">Auto Fit Size</button>
+                    
                 </div>`;
 
             case 'opacity':

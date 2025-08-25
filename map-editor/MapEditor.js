@@ -164,6 +164,14 @@ export class MapEditor extends CanvasEngine {
                 this.clipboardOps.duplicate();
             }
 
+            const currentTool = this.tools.get(this.currentTool);
+            if (currentTool?.id === 'text' && currentTool?.isEditing) {
+                // ถ้ากำลัง edit text ไม่ต้องจัดการ arrow keys
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    return; // ให้ TextTool จัดการเอง
+                }
+            }
+
             // Arrow key movement for selected objects
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                 e.preventDefault();

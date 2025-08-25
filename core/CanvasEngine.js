@@ -195,6 +195,13 @@ export class CanvasEngine {
         this.render();
     }
 
+    shouldAutoPan() {
+         if (this.currentTool?.id === 'text' && this.currentTool?.isEditing) {
+            return false;
+        }
+        return true;
+    }
+
     // Resize utilities
     getResizeHandles(bounds) {
         const { x, y, width, height } = bounds;        

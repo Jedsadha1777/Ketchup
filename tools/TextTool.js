@@ -4,34 +4,64 @@ import { TextUtils } from '../utils/TextUtils.js';
 export class TextTool extends ITool {
     constructor() {
         super('text', 'Text', {
-             icon: '📝',
+            icon: '📝',
             cursor: 'text'
         });
+
+        // Edit state
         this.isEditing = false;
         this.editingIndex = -1;
         this.editingText = '';
+        this.originalText = '';
         this.cursorPosition = 0;
+
+        // Visual state
         this.cursorVisible = true;
         this.cursorBlinkInterval = null;
+
+        // Resize state
         this.isManuallyResized = false;
         this.originalBounds = null;
-        
-        this.keydownHandler = this.handleKeydown.bind(this);
+
+        // Misc state
+        this.isNewText = false;
+        this.wasAutoSwitched = false;
+
+        // Bind handler
+        this.handleKeydown = this.handleKeydown.bind(this);
     }
 
+    // ============= Main Tool Interface =============
     activate(ctx) {
         ctx.updateCursor(this.cursor);
     }
 
     deactivate(ctx) {
-        this.finishEditing(ctx);
+        if (this.isEditing) {
+            this.finishEditing(ctx);
+        }
     }
 
     onPointerDown(e, pos, ctx) {
-        // If currently editing, finish editing first
         if (this.isEditing) {
-            this.finishEditing(ctx);
-            return;
+            const clickedIndex = ctx.getObjectAt(pos.x, pos.y);
+
+            if (clickedIndex === this.editingIndex) {
+                // คลิกที่ text ที่กำลัง edit - หา cursor position
+                const cursorPos = this.getCursorPositionFromClick(pos, ctx);
+                if (cursorPos !== -1) {
+                    this.cursorPosition = cursorPos;
+                    this.resetCursorBlink();
+                    ctx.render();
+                }
+                return;
+            } else {
+                // คลิกที่อื่น - จบการ edit
+                this.finishEditing(ctx);
+                if (clickedIndex === -1 || ctx.objects.types[clickedIndex] !== 'text') {
+                    return;
+                }
+            }
         }
 
         const clickedIndex = ctx.getObjectAt(pos.x, pos.y);
@@ -39,132 +69,454 @@ export class TextTool extends ITool {
         if (clickedIndex !== -1 && ctx.objects.types[clickedIndex] === 'text') {
             this.startEditing(clickedIndex, ctx);
 
-            // Calculate cursor position from click
-            const extra = ctx.objects.extra[clickedIndex];
-            if (extra && extra.text) {
-                const cursorPos = this.getCursorPositionFromClick(pos, clickedIndex, ctx);
-                if (cursorPos !== -1) {
-                    this.cursorPosition = cursorPos;
-                    this.resetCursorBlink();
-                    ctx.render();
-                }
+            // หา cursor position จากตำแหน่งคลิก
+            const cursorPos = this.getCursorPositionFromClick(pos, ctx);
+            if (cursorPos !== -1) {
+                this.cursorPosition = cursorPos;
+                this.resetCursorBlink();
+                ctx.render();
             }
         } else {
             if (this.wasAutoSwitched) {
                 ctx.useTool('select');
                 return;
-            } else {
-                this.createNewText(pos, ctx);
             }
+            this.createNewText(pos, ctx);
         }
     }
 
-    getCursorPositionFromClick(clickPos, index, ctx) {
+    getCursorPositionFromClick(pos, ctx) {
+        const index = this.editingIndex !== -1 ? this.editingIndex : ctx.getObjectAt(pos.x, pos.y);
+        if (index === -1) return -1;
+
         const bounds = ctx.objects.getBounds(index);
         const extra = ctx.objects.extra[index];
-        if (!extra || !extra.text) return -1;
-        
-        const rotation = extra.rotation || 0;
-        let transformedClickPos = clickPos;
-        
-        // Transform click position if text is rotated
-        if (rotation !== 0) {
-            const centerX = bounds.x + bounds.width / 2;
-            const centerY = bounds.y + bounds.height / 2;
-            const rad = (-rotation * Math.PI) / 180; // Inverse rotation
-            
-            // Transform mouse position to text's local coordinate system
-            const localX = (clickPos.x - centerX) * Math.cos(rad) - (clickPos.y - centerY) * Math.sin(rad);
-            const localY = (clickPos.x - centerX) * Math.sin(rad) + (clickPos.y - centerY) * Math.cos(rad);
-            
-            transformedClickPos = {
-                x: centerX + localX,
-                y: centerY + localY
-            };
-        }
-        
-        const padding = extra.padding || 4;
-        const lineHeight = (extra.fontSize || 16) * (extra.lineHeight || 1.2);
-        
-        // Calculate which line was clicked (ใช้ transformed position)
-        const relativeY = transformedClickPos.y - (bounds.y + padding);
+        if (!extra || !bounds) return -1;
+
+        const padding = extra.padding || 8;
+        const fontSize = extra.fontSize || 16;
+        const lineHeight = fontSize * (extra.lineHeight || 1.2);
+
+        ctx.ctx.save();
+        ctx.ctx.font = `${fontSize}px ${extra.fontFamily || 'Arial'}`;
+
+        // คำนวณ wrapped text เพื่อหาบรรทัดที่คลิก
+        const maxWidth = bounds.width - (padding * 2);
+        const wrappedText = TextUtils.wrapText(this.editingText, maxWidth, ctx.ctx);
+        const wrappedLines = wrappedText.split('\n');
+
+        const relativeY = pos.y - (bounds.y + padding);
         const clickedLineIndex = Math.floor(relativeY / lineHeight);
-        
-        // Get wrapped lines
-        const maxWidth = Math.max(bounds.width - (padding * 2), 20);
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        context.font = `${extra.fontStyle || 'normal'} ${extra.fontWeight || 'normal'} ${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
-        
-        const wrappedText = TextUtils.wrapText(extra.text, maxWidth, context);
-        const lines = wrappedText.split('\n');
-        
-        if (clickedLineIndex < 0 || clickedLineIndex >= lines.length) {
-            // Click outside text area - position at end
-            return extra.text.length;
+
+        if (clickedLineIndex < 0) {
+            ctx.ctx.restore();
+            return 0;
         }
-        
-        const clickedLine = lines[clickedLineIndex];
-        const relativeX = transformedClickPos.x - (bounds.x + padding); // ใช้ transformed position
-        
-        // Find closest character position in the line
-        let bestDistance = Infinity;
-        let bestPosition = 0;
-        
+        if (clickedLineIndex >= wrappedLines.length) {
+            ctx.ctx.restore();
+            return this.editingText.length;
+        }
+
+        // หาตำแหน่งในบรรทัดที่คลิก
+        const relativeX = pos.x - (bounds.x + padding);
+        const clickedLine = wrappedLines[clickedLineIndex];
+
+        let charPosInLine = 0;
+        let minDist = Math.abs(relativeX);
+
         for (let i = 0; i <= clickedLine.length; i++) {
-            const substring = clickedLine.substring(0, i);
-            const metrics = context.measureText(substring);
-            const charX = metrics.width;
-            const distance = Math.abs(charX - relativeX);
-            
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestPosition = i;
+            const textWidth = ctx.ctx.measureText(clickedLine.substring(0, i)).width;
+            const dist = Math.abs(textWidth - relativeX);
+            if (dist < minDist) {
+                minDist = dist;
+                charPosInLine = i;
             }
         }
-        
-        // Convert line position to absolute text position
-        const linesBeforeCurrent = lines.slice(0, clickedLineIndex);
-        const charsBeforeLine = linesBeforeCurrent.join('\n').length + (clickedLineIndex > 0 ? 1 : 0);
-        
-        return charsBeforeLine + bestPosition;
+
+        ctx.ctx.restore();
+
+        // Map จาก wrapped position กลับไปหา original position
+        // โดยนับตัวอักษรทีละบรรทัดจนถึงบรรทัดที่คลิก
+        let originalPos = 0;
+
+        for (let i = 0; i < clickedLineIndex; i++) {
+            originalPos += wrappedLines[i].length;
+            // ไม่นับ newline ที่เกิดจาก wrap
+            // นับเฉพาะ newline ที่มีอยู่จริงใน original text
+            if (originalPos < this.editingText.length &&
+                this.editingText[originalPos] === '\n') {
+                originalPos++;
+            }
+        }
+
+        // เพิ่มตำแหน่งในบรรทัดที่คลิก
+        originalPos += charPosInLine;
+
+        return Math.min(originalPos, this.editingText.length);
     }
 
-    // Helper method to maintain cursor position across text wrapping
-    maintainCursorPositionAfterWrap(originalText, wrappedText, originalCursorPos) {
-        if (originalText === wrappedText) {
-            return Math.min(originalCursorPos, wrappedText.length);
+    // ตรวจสอบว่า screenToCanvas ทำงานถูกต้อง
+    // ถ้าไม่ถูก อาจต้องคำนวณเอง:
+    getWorldPosition(screenX, screenY, ctx) {
+        // แปลง screen coordinates เป็น world coordinates
+        const worldX = (screenX - ctx.panX) / ctx.zoom;
+        const worldY = (screenY - ctx.panY) / ctx.zoom;
+        return { x: worldX, y: worldY };
+    }
+
+    onPointerMove(e, pos, ctx) {
+        // ไม่ทำอะไร - ไม่มี drag selection
+    }
+
+    onPointerUp(e, pos, ctx) {
+        // ไม่ทำอะไร - ไม่มี drag selection
+    }
+
+    // ============= Edit Lifecycle =============
+    startEditing(index, ctx) {
+        if (this.isEditing) {
+            this.finishEditing(ctx);
         }
-        
-        // Count characters up to cursor position in original text
-        const beforeCursor = originalText.substring(0, originalCursorPos);
-        
-        // Find corresponding position in wrapped text
-        let wrappedPos = 0;
-        let originalPos = 0;
-        
-        for (let i = 0; i < wrappedText.length && originalPos < beforeCursor.length; i++) {
-            const wrappedChar = wrappedText[i];
-            const originalChar = beforeCursor[originalPos];
-            
-            if (wrappedChar === originalChar) {
-                // Characters match, advance both
-                originalPos++;
-                wrappedPos = i + 1;
-            } else if (wrappedChar === '\n' && originalChar !== '\n') {
-                // Wrapped text has a line break that wasn't in original
-                // This is an auto-inserted line break, skip it
-                wrappedPos = i + 1;
-            } else if (wrappedChar !== '\n' && originalChar === '\n') {
-                // Original had a line break that's still there
-                originalPos++;
-                wrappedPos = i + 1;
+
+        const extra = ctx.objects.extra[index];
+        if (!extra) return;
+
+        this.isEditing = true;
+        this.editingIndex = index;
+        this.originalText = extra.text || '';
+        this.editingText = extra.text || '';
+        this.cursorPosition = this.editingText.length;
+
+        this.originalBounds = { ...ctx.objects.getBounds(index) };
+        this.isManuallyResized = this.checkIfManuallyResized(index, ctx);
+
+        this.startCursorBlink();
+        document.addEventListener('keydown', this.handleKeydown);
+
+        ctx.render();
+    }
+
+    finishEditing(ctx) {
+        if (!this.isEditing || this.editingIndex === -1) return;
+
+        const index = this.editingIndex;
+        const extra = ctx.objects.extra[index];
+        if (!extra) return;
+
+        const newText = this.editingText.trim();
+
+        if (newText) {
+            if (newText !== this.originalText) {
+                // Save changes via command
+                const objectId = ctx.objects.getIdByIndex(index);
+
+                const oldExtra = JSON.parse(JSON.stringify(extra));
+                oldExtra.text = this.originalText;
+                const oldData = { extra: oldExtra };
+
+                const newExtra = JSON.parse(JSON.stringify(extra));
+                newExtra.text = newText;
+                const newData = { extra: newExtra };
+
+                const cmd = new ctx.createCommands.UpdateObjectCmd(
+                    ctx.objects, objectId, oldData, newData
+                );
+                ctx.history.exec(cmd);
+            }
+
+            if (!this.isManuallyResized) {
+                this.updateTextBounds(index, ctx, newText);
+            }
+        } else if (this.isNewText) {
+            // Delete empty new text
+            const objectId = ctx.objects.getIdByIndex(index);
+            const bounds = ctx.objects.getBounds(index);
+            ctx.spatialGrid.removeObject(objectId, bounds.x, bounds.y, bounds.width, bounds.height);
+            ctx.objects.removeObject(index);
+        }
+
+        this.cleanup();
+
+        if (this.wasAutoSwitched) {
+            this.wasAutoSwitched = false;
+        }
+        ctx.useTool('select');
+
+        ctx.render();
+        ctx.updateInspector();
+        ctx.updateHistoryButtons?.();
+    }
+
+    cancelEditing(ctx) {
+        if (!this.isEditing) return;
+
+        const extra = ctx.objects.extra[this.editingIndex];
+        if (extra) {
+            extra.text = this.originalText;
+            if (!this.isManuallyResized && this.originalBounds) {
+                ctx.objects.setBounds(this.editingIndex, this.originalBounds);
             }
         }
-        
-        return Math.min(wrappedPos, wrappedText.length);
-    }  
 
+        this.cleanup();
+        ctx.render();
+    }
+
+    cleanup() {
+        this.stopCursorBlink();
+        document.removeEventListener('keydown', this.handleKeydown);
+
+        this.isEditing = false;
+        this.editingIndex = -1;
+        this.editingText = '';
+        this.originalText = '';
+        this.cursorPosition = 0;
+        this.isNewText = false;
+        this.isManuallyResized = false;
+        this.originalBounds = null;
+    }
+
+    // ============= Text Manipulation =============
+    insertText(text, ctx) {
+        const before = this.editingText.slice(0, this.cursorPosition);
+        const after = this.editingText.slice(this.cursorPosition);
+        this.editingText = before + text + after;
+        this.cursorPosition += text.length;
+
+        this.updateTextObject(ctx);
+        this.resetCursorBlink();
+        ctx.render();
+    }
+
+    deleteCharacter(direction, ctx) {
+        if (direction === 'backward' && this.cursorPosition > 0) {
+            this.editingText =
+                this.editingText.slice(0, this.cursorPosition - 1) +
+                this.editingText.slice(this.cursorPosition);
+            this.cursorPosition--;
+        } else if (direction === 'forward' && this.cursorPosition < this.editingText.length) {
+            this.editingText =
+                this.editingText.slice(0, this.cursorPosition) +
+                this.editingText.slice(this.cursorPosition + 1);
+        } else {
+            return;
+        }
+
+        this.updateTextObject(ctx);
+        this.resetCursorBlink();
+        ctx.render();
+    }
+
+    updateTextObject(ctx) {
+        if (this.editingIndex === -1) return;
+
+        const extra = ctx.objects.extra[this.editingIndex];
+        if (!extra) return;
+
+        extra.text = this.editingText;
+
+        if (!this.isManuallyResized) {
+            this.updateTextBounds(this.editingIndex, ctx, this.editingText);
+        }
+    }
+
+    // ============= Cursor Movement =============
+    moveCursor(direction, ctx) {
+        switch (direction) {
+            case 'left':
+                this.cursorPosition = Math.max(0, this.cursorPosition - 1);
+                break;
+            case 'right':
+                this.cursorPosition = Math.min(this.editingText.length, this.cursorPosition + 1);
+                break;
+            case 'up':
+                this.moveCursorVertical(-1);
+                break;
+            case 'down':
+                this.moveCursorVertical(1);
+                break;
+            case 'home':
+                this.cursorPosition = this.getCursorPositionStartOfLine();
+                break;
+            case 'end':
+                this.cursorPosition = this.getCursorPositionEndOfLine();
+                break;
+        }
+
+        this.resetCursorBlink();
+        ctx.render();
+    }
+
+    moveCursorVertical(direction) {
+        const lines = this.editingText.split('\n');
+        let currentPos = 0;
+        let currentLine = 0;
+        let posInLine = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+            const lineLength = lines[i].length;
+            if (currentPos + lineLength >= this.cursorPosition) {
+                currentLine = i;
+                posInLine = this.cursorPosition - currentPos;
+                break;
+            }
+            currentPos += lineLength + 1;
+        }
+
+        const targetLine = currentLine + direction;
+        if (targetLine < 0 || targetLine >= lines.length) return;
+
+        let newPos = 0;
+        for (let i = 0; i < targetLine; i++) {
+            newPos += lines[i].length + 1;
+        }
+
+        this.cursorPosition = Math.min(newPos + posInLine, newPos + lines[targetLine].length);
+    }
+
+    getCursorPositionStartOfLine() {
+        const textBefore = this.editingText.substring(0, this.cursorPosition);
+        const lastNewline = textBefore.lastIndexOf('\n');
+        return lastNewline + 1;
+    }
+
+    getCursorPositionEndOfLine() {
+        const nextNewline = this.editingText.indexOf('\n', this.cursorPosition);
+        return nextNewline === -1 ? this.editingText.length : nextNewline;
+    }
+
+    // ============= Input Handlers =============
+    handleKeydown(e) {
+        if (!this.isEditing) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const ctx = window.editor?.api || window.editor;
+
+        switch (e.key) {
+            case 'Enter':
+                if (e.shiftKey) {
+                    this.insertText('\n', ctx);
+                } else {
+                    this.finishEditing(ctx);
+                }
+                break;
+
+            case 'Escape':
+                this.cancelEditing(ctx);
+                break;
+
+            case 'Backspace':
+                this.deleteCharacter('backward', ctx);
+                break;
+
+            case 'Delete':
+                this.deleteCharacter('forward', ctx);
+                break;
+
+            case 'ArrowLeft':
+                this.moveCursor('left', ctx);
+                break;
+
+            case 'ArrowRight':
+                this.moveCursor('right', ctx);
+                break;
+
+            case 'ArrowUp':
+                this.moveCursor('up', ctx);
+                break;
+
+            case 'ArrowDown':
+                this.moveCursor('down', ctx);
+                break;
+
+            case 'Home':
+                this.moveCursor('home', ctx);
+                break;
+
+            case 'End':
+                this.moveCursor('end', ctx);
+                break;
+
+            default:
+                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                    this.insertText(e.key, ctx);
+                }
+                break;
+        }
+    }
+
+    // ============= Drawing =============
+    drawOverlay(ctx) {
+        if (!this.isEditing || this.editingIndex === -1) return;
+
+        const bounds = ctx.objects.getBounds(this.editingIndex);
+        const extra = ctx.objects.extra[this.editingIndex];
+        if (!bounds || !extra) return;
+
+        ctx.ctx.save();
+
+        // Draw editing frame
+        ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
+        ctx.ctx.lineWidth = 2 / ctx.zoom;
+        ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
+        ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        ctx.ctx.setLineDash([]);
+
+        // Draw resize handles
+        const cornerSize = 6 / ctx.zoom;
+        ctx.ctx.fillStyle = '#0066cc';
+        const corners = [
+            [bounds.x, bounds.y],
+            [bounds.x + bounds.width, bounds.y],
+            [bounds.x, bounds.y + bounds.height],
+            [bounds.x + bounds.width, bounds.y + bounds.height]
+        ];
+
+        corners.forEach(([x, y]) => {
+            ctx.ctx.fillRect(x - cornerSize / 2, y - cornerSize / 2, cornerSize, cornerSize);
+        });
+
+        // Draw cursor
+        if (this.cursorVisible) {
+            this.drawCursor(ctx, bounds, extra);
+        }
+
+        ctx.ctx.restore();
+    }
+
+    drawCursor(ctx, bounds, extra) {
+        const padding = extra.padding || 8;
+        const fontSize = extra.fontSize || 16;
+        const lineHeight = fontSize * (extra.lineHeight || 1.2);
+
+        ctx.ctx.save();
+        ctx.ctx.font = `${fontSize}px ${extra.fontFamily || 'Arial'}`;
+
+        // ใช้ wrapped text เหมือนกับ getCursorPositionFromClick
+        const maxWidth = bounds.width - (padding * 2);
+        const textBeforeCursor = this.editingText.substring(0, this.cursorPosition);
+        const wrappedText = TextUtils.wrapText(textBeforeCursor, maxWidth, ctx.ctx);
+        const lines = wrappedText.split('\n');
+
+        const currentLine = lines[lines.length - 1] || '';
+        const textWidth = ctx.ctx.measureText(currentLine).width;
+
+        const x = bounds.x + padding + textWidth;
+        const y = bounds.y + padding + ((lines.length - 1) * lineHeight);
+
+        ctx.ctx.strokeStyle = '#000000';
+        ctx.ctx.lineWidth = 1 / ctx.zoom;
+        ctx.ctx.beginPath();
+        ctx.ctx.moveTo(x, y);
+        ctx.ctx.lineTo(x, y + lineHeight);
+        ctx.ctx.stroke();
+
+        ctx.ctx.restore();
+    }
+
+    // ============= Utility Methods =============
     createNewText(pos, ctx) {
         const snapped = ctx.snapPosition(pos.x, pos.y);
 
@@ -172,23 +524,20 @@ export class TextTool extends ITool {
         const defaultFontSize = 16;
         const defaultPadding = 8;
 
-        const tempExtra = {
-            fontSize: defaultFontSize,
-            fontFamily: 'Arial',
-            fontWeight: 'normal',
-            fontStyle: 'normal',
-            lineHeight: 1.2,
-            padding: defaultPadding,
-            isManuallyResized: false
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = `${defaultFontSize}px Arial`;
+        const metrics = context.measureText(defaultText);
 
-        };
-        const { width: estimatedWidth, height: estimatedHeight } = this.calculateTextBounds(defaultText, tempExtra);
+        const width = metrics.width + (defaultPadding * 4) + 20;
+        const height = defaultFontSize * 1.4 + (defaultPadding * 2);
 
         const cmd = new ctx.createCommands.CreateObjectCmd(
             ctx.objects, ctx.spatialGrid, 'text',
-            snapped.x, snapped.y, estimatedWidth, estimatedHeight,
+            snapped.x, snapped.y, width, height,
             '#000000', 'text'
         );
+
         const { id, index } = ctx.history.exec(cmd);
 
         ctx.objects.extra[index] = {
@@ -203,42 +552,91 @@ export class TextTool extends ITool {
             padding: defaultPadding
         };
 
-        this.updateTextBounds(index, ctx);
-
         ctx.objects.selectObject(index);
         ctx.updateInfo();
         ctx.updateInspector();
         ctx.updateHistoryButtons?.();
-
         ctx.render();
 
-        this.startEditing(index, ctx);
         this.isNewText = true;
+        this.startEditing(index, ctx);
     }
 
-    startEditing(index, ctx) {
-        if (this.isEditing) {
-            this.finishEditing(ctx);
+    checkIfManuallyResized(index, ctx) {
+        const extra = ctx.objects.extra[index];
+        if (!extra || !extra.text) return false;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = `${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
+
+        const lines = extra.text.split('\n');
+        let maxWidth = 0;
+
+        for (const line of lines) {
+            const metrics = context.measureText(line);
+            maxWidth = Math.max(maxWidth, metrics.width);
         }
 
-        this.isEditing = true;
-        this.editingIndex = index;
-        this.isManuallyResized = this.wasManuallyResized(index, ctx);
-        this.originalBounds = { ...ctx.objects.getBounds(index) };
+        const padding = extra.padding || 8;
+        const autoWidth = maxWidth + (padding * 4) + 20;
+        const autoHeight = lines.length * (extra.fontSize || 16) * (extra.lineHeight || 1.2) + (padding * 2);
 
+        const bounds = ctx.objects.getBounds(index);
+        const tolerance = 5;
+
+        return Math.abs(bounds.width - autoWidth) > tolerance ||
+            Math.abs(bounds.height - autoHeight) > tolerance;
+    }
+
+    updateTextBounds(index, ctx, text) {
         const extra = ctx.objects.extra[index];
         if (!extra) return;
 
-        this.originalText = extra.text || '';
-        this.editingText = extra.text || '';
-        this.cursorPosition = this.editingText.length;
+        const textToMeasure = text || extra.text || '';
+        if (!textToMeasure.trim()) return;
 
-        this.startCursorBlink();
-        document.addEventListener('keydown', this.keydownHandler);
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = `${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
 
-        ctx.render();
+        const lines = textToMeasure.split('\n');
+        let maxWidth = 0;
+
+        for (const line of lines) {
+            const metrics = context.measureText(line);
+            maxWidth = Math.max(maxWidth, metrics.width);
+        }
+
+        const padding = extra.padding || 8;
+        const newWidth = Math.max(maxWidth + (padding * 4) + 20, 60);
+        const lineHeight = (extra.fontSize || 16) * (extra.lineHeight || 1.2);
+        const newHeight = Math.max(lines.length * lineHeight + (padding * 2), 30);
+
+        const bounds = ctx.objects.getBounds(index);
+        const newBounds = {
+            x: bounds.x,
+            y: bounds.y,
+            width: newWidth,
+            height: newHeight
+        };
+
+        const id = ctx.objects.getIdByIndex(index);
+        ctx.spatialGrid.removeObject(id, bounds.x, bounds.y, bounds.width, bounds.height);
+        ctx.objects.setBounds(index, newBounds);
+        ctx.spatialGrid.addObject(id, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
+
+        ctx.addDirtyRect(newBounds);
     }
 
+    onTextBoxResized(ctx) {
+        if (this.isEditing && this.editingIndex !== -1) {
+            this.isManuallyResized = true;
+            ctx.render();
+        }
+    }
+
+    // ============= Visual Effects =============
     startCursorBlink() {
         this.cursorVisible = true;
         if (this.cursorBlinkInterval) {
@@ -260,362 +658,12 @@ export class TextTool extends ITool {
         this.cursorVisible = false;
     }
 
-    handleKeydown(e) {
-        if (!this.isEditing) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const ctx = window.editor?.api || window.editor;
-
-        switch (e.key) {
-            case 'Escape':
-                this.cancelEditing(ctx);
-                break;
-            case 'Enter':
-                 if (e.shiftKey) {
-                     this.insertText('\n', ctx);
-                } else {
-                    this.finishEditing(ctx);
-                }
-                break;
-            case 'Backspace':
-                this.handleBackspace(ctx);
-                break;
-            case 'Delete':
-                this.handleDelete(ctx);
-                break;
-            case 'ArrowLeft':
-                this.cursorPosition = Math.max(0, this.cursorPosition - 1);
-                this.resetCursorBlink();
-                ctx.render();
-                break;
-            case 'ArrowRight':
-                this.cursorPosition = Math.min(this.editingText.length, this.cursorPosition + 1);
-                this.resetCursorBlink();
-                ctx.render();
-                break;
-            case 'Home':
-                this.cursorPosition = 0;
-                this.resetCursorBlink();
-                ctx.render();
-                break;
-            case 'End':
-                this.cursorPosition = this.editingText.length;
-                this.resetCursorBlink();
-                ctx.render();
-                break;
-            default:
-                if (e.key.length === 1) {
-                    this.insertText(e.key, ctx);
-                }
-                break;
-        }
-    }
-
-    insertText(text, ctx) {
-        this.editingText = this.editingText.slice(0, this.cursorPosition) + text + this.editingText.slice(this.cursorPosition);
-        this.cursorPosition += text.length;
-        const originalCursorPos = this.cursorPosition;
-        this.resetCursorBlink();
-        
-        if (this.editingIndex !== -1) {
-            const extra = ctx.objects.extra[this.editingIndex];
-           if (extra) {
-                // Only wrap if manually resized 
-                if (this.isManuallyResized) {
-                    extra.isManuallyResized = true;
-                    const originalText = this.editingText;
-                    const wrappedText = this.wrapTextToContainer(this.editingText, this.editingIndex, ctx);
-                    extra.text = wrappedText;
-                    this.editingText = wrappedText;
-                    this.cursorPosition = this.maintainCursorPositionAfterWrap(originalText, wrappedText, originalCursorPos);
-                } else {
-                    // Auto-fit mode - don't wrap, just update text
-                    extra.isManuallyResized = false;
-                    extra.text = this.editingText;
-                    if (!this.isManuallyResized) {
-                        this.updateTextBounds(this.editingIndex, ctx, this.editingText);
-                    }
-                }
-            }
-        }
-        
-        ctx.render();
-    }
-
-    handleBackspace(ctx) {
-        if (this.cursorPosition > 0) {
-            this.editingText = this.editingText.slice(0, this.cursorPosition - 1) + this.editingText.slice(this.cursorPosition);
-            this.cursorPosition--;
-            const originalCursorPos = this.cursorPosition;
-            this.resetCursorBlink();
-            
-            if (this.editingIndex !== -1) {
-                const extra = ctx.objects.extra[this.editingIndex];
-                if (extra) {
-                    
-                    if (this.isManuallyResized) {
-                        extra.isManuallyResized = true;
-                        const originalText = this.editingText;
-                        const wrappedText = this.wrapTextToContainer(this.editingText, this.editingIndex, ctx);
-                        extra.text = wrappedText;
-                        this.editingText = wrappedText;
-                        
-                        this.cursorPosition = this.maintainCursorPositionAfterWrap(originalText, wrappedText, originalCursorPos);
-                    } else {
-                        extra.isManuallyResized = false;
-                        extra.text = this.editingText;
-                        if (!this.isManuallyResized) {
-                            this.updateTextBounds(this.editingIndex, ctx, this.editingText);
-                        }
-                    }
-                }
-            }
-            
-            ctx.render();
-        }
-    }
-
-    handleDelete(ctx) {
-        if (this.cursorPosition < this.editingText.length) {
-            this.editingText = this.editingText.slice(0, this.cursorPosition) + this.editingText.slice(this.cursorPosition + 1);
-            this.resetCursorBlink();
-            
-            if (this.editingIndex !== -1) {
-                const extra = ctx.objects.extra[this.editingIndex];
-                if (extra) {
-                    if (this.isManuallyResized) {
-                        extra.isManuallyResized = true;
-                        const wrappedText = this.wrapTextToContainer(this.editingText, this.editingIndex, ctx);
-                        extra.text = wrappedText;
-                        this.editingText = wrappedText;
-                        this.cursorPosition = Math.min(this.cursorPosition, this.editingText.length);
-                    } else {
-                        extra.isManuallyResized = false;
-                        extra.text = this.editingText;
-                        if (!this.isManuallyResized) {
-                            this.updateTextBounds(this.editingIndex, ctx, this.editingText);
-                        }
-                    }
-                }
-            }
-            
-            ctx.render();
-        }
-    }
-
     resetCursorBlink() {
         this.cursorVisible = true;
         this.startCursorBlink();
     }
 
-    wrapTextToContainer(text, index, ctx) {
-        const bounds = ctx.objects.getBounds(index);
-        const extra = ctx.objects.extra[index];
-        if (!extra) return text;
-        
-        const maxWidth = bounds.width - (extra.padding * 2);
-        
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        context.font = `${extra.fontStyle || 'normal'} ${extra.fontWeight || 'normal'} ${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
-        
-        return TextUtils.wrapText(text, maxWidth, context);
-    }
-
-    finishEditing(ctx) {
-        if (!this.isEditing || this.editingIndex === -1) return;
-
-        const index = this.editingIndex;
-        const extra = ctx.objects.extra[index];
-
-        if (extra) {
-            const newText = this.editingText.trim();
-
-            if (newText) {
-                if (newText !== this.originalText) {
-                    const objectId = ctx.objects.getIdByIndex(index);
-                    
-                    const oldExtra = JSON.parse(JSON.stringify(extra));
-                    oldExtra.text = this.originalText;
-                    const oldData = { extra: oldExtra };
-                    
-                    const newExtra = JSON.parse(JSON.stringify(extra));
-                    newExtra.text = newText;
-                    const newData = { extra: newExtra };
-                    
-                    const cmd = new ctx.createCommands.UpdateObjectCmd(
-                        ctx.objects, objectId, oldData, newData
-                    );
-                    ctx.history.exec(cmd);
-                }
-                
-                if (!this.isManuallyResized) {
-                    this.updateTextBounds(index, ctx, newText);
-                }
-            } else {
-                if (this.isNewText) {
-                    const objectId = ctx.objects.getIdByIndex(index);
-                    const bounds = ctx.objects.getBounds(index);
-                    ctx.spatialGrid.removeObject(objectId, bounds.x, bounds.y, bounds.width, bounds.height);
-                    ctx.objects.removeObject(index);
-                } else {
-                    ctx.deleteObject(index);
-                }
-            }
-        }
-
-        this.cleanupEditing();
-
-        if (this.wasAutoSwitched) {
-            this.wasAutoSwitched = false;
-            ctx.useTool('select');
-        } else {
-            ctx.useTool('select');
-        }
-
-        ctx.render();
-        ctx.updateInspector();
-        ctx.updateHistoryButtons?.();
-    }
-
-    cancelEditing(ctx) {
-        if (!this.isEditing) return;
-
-        if (this.editingIndex !== -1) {
-            const extra = ctx.objects.extra[this.editingIndex];
-            if (extra) {
-                extra.text = this.originalText;
-                if (!this.isManuallyResized && this.originalBounds) {
-                    ctx.objects.setBounds(this.editingIndex, this.originalBounds);
-                }
-            }
-        }
-
-        this.cleanupEditing();
-        ctx.render();
-    }
-
-    cleanupEditing() {
-        this.stopCursorBlink();
-        document.removeEventListener('keydown', this.keydownHandler);
-        
-        this.isEditing = false;
-        this.editingIndex = -1;
-        this.editingText = '';
-        this.cursorPosition = 0;
-        this.originalText = '';
-        this.isNewText = false;
-        this.isManuallyResized = false;
-        this.originalBounds = null;
-    }
-
-    calculateTextBounds(text, extra) {
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-
-        context.font = `${extra.fontStyle} ${extra.fontWeight} ${extra.fontSize}px ${extra.fontFamily}`;
-
-        const lines = text.split('\n');
-        const lineHeight = extra.fontSize * extra.lineHeight;
-        let maxWidth = 0;
-
-        for (const line of lines) {
-            const metrics = context.measureText(line || ' ');
-            maxWidth = Math.max(maxWidth, metrics.width);
-        }
-
-        const totalHeight = lines.length > 1 
-            ? (lines.length * lineHeight) + (lineHeight * 0.2)
-            : lineHeight;
-        
-        const horizontalPadding = extra.padding * 4;
-        const verticalPadding = extra.padding * 2; 
-
-        const width = Math.max(maxWidth + horizontalPadding + 20, 60);
-        const height = Math.max(totalHeight + verticalPadding, extra.fontSize * 1.4 + verticalPadding); 
-
-        return { width, height };
-    }
-
-    updateTextBounds(index, ctx, text = null) {
-        const extra = ctx.objects.extra[index];
-        if (!extra) return;
-
-        const textToMeasure = text || extra.text || '';
-
-        if (!textToMeasure.trim()) {
-            const bounds = ctx.objects.getBounds(index);
-            const minWidth = 60;
-            const minHeight = extra.fontSize * 1.4 + (extra.padding * 2); 
-
-            if (bounds.width < minWidth || bounds.height < minHeight) {
-                const newBounds = {
-                    x: bounds.x,
-                    y: bounds.y,
-                    width: Math.max(bounds.width, minWidth),
-                    height: Math.max(bounds.height, minHeight)
-                };
-
-                const id = ctx.objects.getIdByIndex(index);
-                ctx.spatialGrid.removeObject(id, bounds.x, bounds.y, bounds.width, bounds.height);
-                ctx.objects.setBounds(index, newBounds);
-                ctx.spatialGrid.addObject(id, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
-                ctx.addDirtyRect(newBounds);
-            }
-            return;
-        }
-
-        const { width: newWidth, height: newHeight } = this.calculateTextBounds(textToMeasure, extra);
-
-        const bounds = ctx.objects.getBounds(index);
-        const newBounds = {
-            x: bounds.x,
-            y: bounds.y,
-            width: newWidth,
-            height: newHeight
-        };
-
-        const id = ctx.objects.getIdByIndex(index);
-        ctx.spatialGrid.removeObject(id, bounds.x, bounds.y, bounds.width, bounds.height);
-
-        ctx.objects.setBounds(index, newBounds);
-
-        ctx.spatialGrid.addObject(id, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
-
-        ctx.addDirtyRect(newBounds);
-    }
-
-    wasManuallyResized(index, ctx) {
-        const extra = ctx.objects.extra[index];
-        if (!extra || !extra.text) return false;
-
-        const { width: autoWidth, height: autoHeight } = this.calculateTextBounds(extra.text, extra);
-
-        const bounds = ctx.objects.getBounds(index);
-        const tolerance = 5;
-
-        return Math.abs(bounds.width - autoWidth) > tolerance || Math.abs(bounds.height - autoHeight) > tolerance;
-    }
-
-    wrapTextDuringEdit(text, maxWidth, ctx) {
-        // Split by manual line breaks first
-        const manualLines = text.split('\n');
-        const wrappedLines = [];
-        
-        for (const line of manualLines) {
-            const wrappedLine = this.wrapSingleLine(line, maxWidth, ctx);
-            wrappedLines.push(wrappedLine);
-        }
-        
-        return wrappedLines.join('\n');
-    }
-    
-    autoFitTextBounds(index, ctx) {
-        this.updateTextBounds(index, ctx);
-    }
-
+    // ============= Tool Events =============
     onKeyDown(e, ctx) {
         if (this.isEditing) {
             return true;
@@ -626,135 +674,5 @@ export class TextTool extends ITool {
             return true;
         }
         return false;
-    }
-
-    drawOverlay(ctx) {
-        if (this.isEditing && this.editingIndex !== -1) {
-            const bounds = ctx.objects.getBounds(this.editingIndex);
-            const extra = ctx.objects.extra[this.editingIndex];
-            const rotation = extra?.rotation || 0;
-
-            ctx.ctx.save();
-            
-            if (rotation !== 0) {
-                const centerX = bounds.x + bounds.width / 2;
-                const centerY = bounds.y + bounds.height / 2;
-                ctx.ctx.translate(centerX, centerY);
-                ctx.ctx.rotate((rotation * Math.PI) / 180);
-                ctx.ctx.translate(-bounds.width / 2, -bounds.height / 2);
-                
-                // Draw relative to the transformed coordinate system
-                ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
-                ctx.ctx.lineWidth = 2 / ctx.zoom;
-                ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
-                ctx.ctx.strokeRect(0, 0, bounds.width, bounds.height);
-                ctx.ctx.setLineDash([]);
-                
-                const cornerSize = 6 / ctx.zoom;
-                ctx.ctx.fillStyle = '#0066cc';
-                ctx.ctx.fillRect(-cornerSize / 2, -cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(bounds.width - cornerSize / 2, -cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(-cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(bounds.width - cornerSize / 2, bounds.height - cornerSize / 2, cornerSize, cornerSize);
-                
-                // วาด cursor ใน transformation context เดียวกัน
-                if (this.cursorVisible && extra) {
-                    this.drawCursor(ctx, bounds, extra, rotation);
-                }
-            } else {
-                ctx.ctx.strokeStyle = 'rgba(0, 102, 204, 0.8)';
-                ctx.ctx.lineWidth = 2 / ctx.zoom;
-                ctx.ctx.setLineDash([10 / ctx.zoom, 5 / ctx.zoom]);
-                ctx.ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-                ctx.ctx.setLineDash([]);
-                
-                const cornerSize = 6 / ctx.zoom;
-                ctx.ctx.fillStyle = '#0066cc';
-                ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y - cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(bounds.x - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
-                ctx.ctx.fillRect(bounds.x + bounds.width - cornerSize / 2, bounds.y + bounds.height - cornerSize / 2, cornerSize, cornerSize);
-                
-                // วาด cursor แบบปกติ
-                if (this.cursorVisible && extra) {
-                    this.drawCursor(ctx, bounds, extra, rotation);
-                }
-            }
-            
-            ctx.ctx.restore();
-        }
-    }
-
-    drawCursor(ctx, bounds, extra, rotation = 0) {
-        ctx.ctx.font = `${extra.fontStyle || 'normal'} ${extra.fontWeight || 'normal'} ${extra.fontSize || 16}px ${extra.fontFamily || 'Arial'}`;
-        
-        const padding = extra.padding || 4;
-        
-        // ใช้พิกัดที่ถูกต้องตาม rotation
-        let baseX, baseY;
-        if (rotation !== 0) {
-            // ใช้ local coordinates (0,0) เมื่อมี rotation
-            baseX = 0;
-            baseY = 0;
-        } else {
-            // ใช้พิกัดจริงเมื่อไม่มี rotation  
-            baseX = bounds.x;
-            baseY = bounds.y;
-        }
-        
-        let textX = baseX + padding;
-        const textY = baseY + padding;
-        
-        if (extra.textAlign === 'center') {
-            textX = baseX + bounds.width / 2;
-        } else if (extra.textAlign === 'right') {
-            textX = baseX + bounds.width - padding;
-        }
-
-        // คำนวณ cursor position ตาม text wrapping
-        const maxWidth = Math.max(bounds.width - (padding * 2), 20);
-        const wrappedText = TextUtils.wrapText(this.editingText.substring(0, this.cursorPosition), maxWidth, ctx.ctx);
-        const lines = wrappedText.split('\n');
-        const currentLine = lines[lines.length - 1] || '';
-        const lineHeight = (extra.fontSize || 16) * (extra.lineHeight || 1.2);
-        
-        const textMetrics = ctx.ctx.measureText(currentLine);
-        let cursorX = textX;
-        
-        if (extra.textAlign === 'center') {
-            cursorX = textX + textMetrics.width - ctx.ctx.measureText(currentLine).width / 2;
-        } else if (extra.textAlign === 'right') {
-            cursorX = textX - textMetrics.width;
-        } else {
-            cursorX = textX + textMetrics.width;
-        }
-        
-        const cursorY = textY + ((lines.length - 1) * lineHeight);
-        
-        ctx.ctx.strokeStyle = '#000000';
-        ctx.ctx.lineWidth = 1 / ctx.zoom;
-        ctx.ctx.beginPath();
-        ctx.ctx.moveTo(cursorX, cursorY);
-        ctx.ctx.lineTo(cursorX, cursorY + lineHeight);
-        ctx.ctx.stroke();
-    }
-
-    // Method to be called when text box is resized during editing
-    onTextBoxResized(ctx) {
-        if (this.isEditing && this.editingIndex !== -1) {
-            const extra = ctx.objects.extra[this.editingIndex];
-            if (!extra || !extra.text) return;
-            
-            this.isManuallyResized = true; // Mark as manually resized
-            // Re-wrap the current text
-            extra.isManuallyResized = true;
-            const originalText = this.editingText;
-            const wrappedText = this.wrapTextToContainer(this.editingText, this.editingIndex, ctx);
-            extra.text = wrappedText;
-            this.editingText = wrappedText;
-            this.cursorPosition = this.maintainCursorPositionAfterWrap(originalText, wrappedText, this.cursorPosition);
-            
-            ctx.render();
-        }
     }
 }
