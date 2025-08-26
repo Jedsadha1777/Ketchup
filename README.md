@@ -1,12 +1,12 @@
 # Ketchup 
 
-A lightweight drawing engine starter kit for web applications. Ketchup provides a robust canvas system with support for shapes, text, images, and map editing, along with essential features such as undo/redo, JSON import/export, and image saving.
+A lightweight map editor and drawing engine starter kit for web applications. Ketchup provides a robust canvas system with drag-and-drop support for creating interactive maps with walls, corridors, waypoints, warppoints, and more. Includes essential features such as undo/redo, object rotation, JSON import/export, and image saving.
 
 ## Features
 
 - **Canvas-based Drawing Engine** - High-performance rendering with spatial optimization
 - **Shape Tools** - Rectangle, circle, text, and image support
-- **Map Editor** - Specialized tools for creating walls, corridors, rooms, and waypoints
+- **Map Editor** - Specialized tools for creating walls, corridors, rooms, waypoints, and warppoints
 - **Undo/Redo System** - Full command pattern implementation with merge support
 - **Import/Export** - JSON serialization and image export capabilities
 - **Plugin Architecture** - Extensible system for adding custom tools and renderers
@@ -17,6 +17,8 @@ A lightweight drawing engine starter kit for web applications. Ketchup provides 
 ## Demo
 
 🔗 **Live Demo**: [https://jedsadha1777.github.io/ketchup/](https://jedsadha1777.github.io/ketchup/)
+🔗 **Map Demo**: [https://jedsadha1777.github.io/ketchup/demo-map.html](https://jedsadha1777.github.io/ketchup/)
+🔗 **Prod Demo**: [https://jedsadha1777.github.io/ketchup/demo-prod.html](https://jedsadha1777.github.io/ketchup/demo-prod.html)
 
 ## Installation
 
