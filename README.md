@@ -16,9 +16,11 @@ A lightweight map editor and drawing engine starter kit for web applications. Ke
 
 ## Demo
 
-🔗 **Live Demo**: [https://jedsadha1777.github.io/ketchup/](https://jedsadha1777.github.io/ketchup/)
-🔗 **Map Demo**: [https://jedsadha1777.github.io/ketchup/demo-map.html](https://jedsadha1777.github.io/ketchup/)
-🔗 **Prod Demo**: [https://jedsadha1777.github.io/ketchup/demo-prod.html](https://jedsadha1777.github.io/ketchup/demo-prod.html)
+🔗 **Live Demo**: [https://jedsadha1777.github.io/ketchup/](https://jedsadha1777.github.io/ketchup/)  
+
+🔗 **Map Demo**: [https://jedsadha1777.github.io/ketchup/demo-map.html](https://jedsadha1777.github.io/ketchup/)  
+
+🔗 **Prod Demo**: [https://jedsadha1777.github.io/ketchup/demo-prod.html](https://jedsadha1777.github.io/ketchup/demo-prod.html)  
 
 ## Installation
 
