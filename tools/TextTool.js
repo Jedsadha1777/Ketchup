@@ -31,6 +31,91 @@ export class TextTool extends ITool {
         this.handleKeydown = this.handleKeydown.bind(this);
     }
 
+    calculateUnifiedTextLayout(text, bounds, extra) {
+        const padding = extra.padding || 8;
+        const fontSize = extra.fontSize || 16;
+        const fontFamily = extra.fontFamily || 'Arial';
+        const lineHeight = fontSize * (extra.lineHeight || 1.2);
+        const maxWidth = bounds.width - (padding * 2);
+
+        // สร้าง shared canvas context
+        if (!this._sharedCanvas) {
+            this._sharedCanvas = document.createElement('canvas');
+            this._sharedContext = this._sharedCanvas.getContext('2d');
+        }
+
+        const ctx = this._sharedContext;
+        ctx.font = `${fontSize}px ${fontFamily}`;
+
+        const lines = [];
+        let totalPos = 0;
+
+        // Split text by existing newlines
+        const paragraphs = text.split('\n');
+
+        for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+            const paragraph = paragraphs[pIndex];
+
+            if (paragraph.trim() === '') {
+                lines.push({
+                    text: '',
+                    startPos: totalPos,
+                    endPos: totalPos,
+                    originalLength: 0
+                });
+                if (pIndex < paragraphs.length - 1) totalPos++;
+                continue;
+            }
+
+            const words = paragraph.split(' ');
+            let currentLine = '';
+            let lineStartPos = totalPos;
+
+            for (let wIndex = 0; wIndex < words.length; wIndex++) {
+                const word = words[wIndex];
+                const testLine = currentLine + (currentLine ? ' ' : '') + word;
+                const testWidth = ctx.measureText(testLine).width;
+
+                if (testWidth > maxWidth && currentLine !== '') {
+                    lines.push({
+                        text: currentLine,
+                        startPos: lineStartPos,
+                        endPos: lineStartPos + currentLine.length,
+                        originalLength: currentLine.length
+                    });
+
+                    const charsProcessed = currentLine.length;
+                    totalPos += charsProcessed + (currentLine.includes(' ') ? 0 : 1);
+                    lineStartPos = totalPos;
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+
+            if (currentLine !== '') {
+                lines.push({
+                    text: currentLine,
+                    startPos: lineStartPos,
+                    endPos: lineStartPos + currentLine.length,
+                    originalLength: currentLine.length
+                });
+                totalPos += currentLine.length;
+            }
+
+            if (pIndex < paragraphs.length - 1) {
+                totalPos++;
+            }
+        }
+
+        return {
+            lines,
+            lineHeight,
+            totalLength: text.length,
+            maxWidth
+        };
+    }
+
     // ============= Main Tool Interface =============
     activate(ctx) {
         ctx.updateCursor(this.cursor);
@@ -94,65 +179,33 @@ export class TextTool extends ITool {
         if (!extra || !bounds) return -1;
 
         const padding = extra.padding || 8;
-        const fontSize = extra.fontSize || 16;
-        const lineHeight = fontSize * (extra.lineHeight || 1.2);
-
-        ctx.ctx.save();
-        ctx.ctx.font = `${fontSize}px ${extra.fontFamily || 'Arial'}`;
-
-        // คำนวณ wrapped text เพื่อหาบรรทัดที่คลิก
-        const maxWidth = bounds.width - (padding * 2);
-        const wrappedText = TextUtils.wrapText(this.editingText, maxWidth, ctx.ctx);
-        const wrappedLines = wrappedText.split('\n');
+        const layout = this.calculateUnifiedTextLayout(this.editingText, bounds, extra);
 
         const relativeY = pos.y - (bounds.y + padding);
-        const clickedLineIndex = Math.floor(relativeY / lineHeight);
+        const clickedLineIndex = Math.floor(relativeY / layout.lineHeight);
 
-        if (clickedLineIndex < 0) {
-            ctx.ctx.restore();
-            return 0;
-        }
-        if (clickedLineIndex >= wrappedLines.length) {
-            ctx.ctx.restore();
-            return this.editingText.length;
-        }
+        if (clickedLineIndex < 0) return 0;
+        if (clickedLineIndex >= layout.lines.length) return this.editingText.length;
 
-        // หาตำแหน่งในบรรทัดที่คลิก
         const relativeX = pos.x - (bounds.x + padding);
-        const clickedLine = wrappedLines[clickedLineIndex];
+        const clickedLine = layout.lines[clickedLineIndex];
 
-        let charPosInLine = 0;
+        if (!clickedLine) return this.editingText.length;
+
+        const ctx2d = this._sharedContext;
+        let bestPos = 0;
         let minDist = Math.abs(relativeX);
 
-        for (let i = 0; i <= clickedLine.length; i++) {
-            const textWidth = ctx.ctx.measureText(clickedLine.substring(0, i)).width;
+        for (let i = 0; i <= clickedLine.text.length; i++) {
+            const textWidth = ctx2d.measureText(clickedLine.text.substring(0, i)).width;
             const dist = Math.abs(textWidth - relativeX);
             if (dist < minDist) {
                 minDist = dist;
-                charPosInLine = i;
+                bestPos = i;
             }
         }
 
-        ctx.ctx.restore();
-
-        // Map จาก wrapped position กลับไปหา original position
-        // โดยนับตัวอักษรทีละบรรทัดจนถึงบรรทัดที่คลิก
-        let originalPos = 0;
-
-        for (let i = 0; i < clickedLineIndex; i++) {
-            originalPos += wrappedLines[i].length;
-            // ไม่นับ newline ที่เกิดจาก wrap
-            // นับเฉพาะ newline ที่มีอยู่จริงใน original text
-            if (originalPos < this.editingText.length &&
-                this.editingText[originalPos] === '\n') {
-                originalPos++;
-            }
-        }
-
-        // เพิ่มตำแหน่งในบรรทัดที่คลิก
-        originalPos += charPosInLine;
-
-        return Math.min(originalPos, this.editingText.length);
+        return clickedLine.startPos + Math.min(bestPos, clickedLine.originalLength);
     }
 
     // ตรวจสอบว่า screenToCanvas ทำงานถูกต้อง
@@ -274,6 +327,9 @@ export class TextTool extends ITool {
         this.isNewText = false;
         this.isManuallyResized = false;
         this.originalBounds = null;
+
+        this._sharedCanvas = null;
+        this._sharedContext = null;
     }
 
     // ============= Text Manipulation =============
@@ -348,30 +404,36 @@ export class TextTool extends ITool {
     }
 
     moveCursorVertical(direction) {
-        const lines = this.editingText.split('\n');
-        let currentPos = 0;
+        if (!this.isEditing) return;
+
+        const bounds = window.editor?.api?.objects?.getBounds(this.editingIndex);
+        const extra = window.editor?.api?.objects?.extra[this.editingIndex];
+
+        if (!bounds || !extra) return;
+
+        const layout = this.calculateUnifiedTextLayout(this.editingText, bounds, extra);
+
         let currentLine = 0;
         let posInLine = 0;
 
-        for (let i = 0; i < lines.length; i++) {
-            const lineLength = lines[i].length;
-            if (currentPos + lineLength >= this.cursorPosition) {
+        for (let i = 0; i < layout.lines.length; i++) {
+            const line = layout.lines[i];
+            if (this.cursorPosition >= line.startPos && this.cursorPosition <= line.endPos) {
                 currentLine = i;
-                posInLine = this.cursorPosition - currentPos;
+                posInLine = Math.min(
+                    this.cursorPosition - line.startPos,
+                    line.text.length
+                );
                 break;
             }
-            currentPos += lineLength + 1;
         }
 
         const targetLine = currentLine + direction;
-        if (targetLine < 0 || targetLine >= lines.length) return;
+        if (targetLine < 0 || targetLine >= layout.lines.length) return;
 
-        let newPos = 0;
-        for (let i = 0; i < targetLine; i++) {
-            newPos += lines[i].length + 1;
-        }
-
-        this.cursorPosition = Math.min(newPos + posInLine, newPos + lines[targetLine].length);
+        const targetLineData = layout.lines[targetLine];
+        const newPosInLine = Math.min(posInLine, targetLineData.text.length);
+        this.cursorPosition = targetLineData.startPos + newPosInLine;
     }
 
     getCursorPositionStartOfLine() {
@@ -488,29 +550,49 @@ export class TextTool extends ITool {
 
     drawCursor(ctx, bounds, extra) {
         const padding = extra.padding || 8;
-        const fontSize = extra.fontSize || 16;
-        const lineHeight = fontSize * (extra.lineHeight || 1.2);
 
         ctx.ctx.save();
-        ctx.ctx.font = `${fontSize}px ${extra.fontFamily || 'Arial'}`;
 
-        // ใช้ wrapped text เหมือนกับ getCursorPositionFromClick
-        const maxWidth = bounds.width - (padding * 2);
-        const textBeforeCursor = this.editingText.substring(0, this.cursorPosition);
-        const wrappedText = TextUtils.wrapText(textBeforeCursor, maxWidth, ctx.ctx);
-        const lines = wrappedText.split('\n');
+        const layout = this.calculateUnifiedTextLayout(this.editingText, bounds, extra);
 
-        const currentLine = lines[lines.length - 1] || '';
-        const textWidth = ctx.ctx.measureText(currentLine).width;
+        let cursorLine = 0;
+        let cursorPosInLine = 0;
 
-        const x = bounds.x + padding + textWidth;
-        const y = bounds.y + padding + ((lines.length - 1) * lineHeight);
+        for (let i = 0; i < layout.lines.length; i++) {
+            const line = layout.lines[i];
+            if (this.cursorPosition >= line.startPos && this.cursorPosition <= line.endPos) {
+                cursorLine = i;
+                cursorPosInLine = Math.min(
+                    this.cursorPosition - line.startPos,
+                    line.text.length
+                );
+                break;
+            }
+        }
+
+        if (cursorLine >= layout.lines.length) {
+            cursorLine = layout.lines.length - 1;
+            cursorPosInLine = layout.lines[cursorLine]?.text.length || 0;
+        }
+
+        const line = layout.lines[cursorLine];
+        if (!line) {
+            ctx.ctx.restore();
+            return;
+        }
+
+        const textBeforeCursor = line.text.substring(0, cursorPosInLine);
+        const textWidth = this._sharedContext.measureText(textBeforeCursor).width;
+
+        const cursorX = bounds.x + padding + textWidth;
+        const cursorY = bounds.y + padding + (cursorLine * layout.lineHeight);
+        const cursorHeight = layout.lineHeight * 0.9;
 
         ctx.ctx.strokeStyle = '#000000';
         ctx.ctx.lineWidth = 1 / ctx.zoom;
         ctx.ctx.beginPath();
-        ctx.ctx.moveTo(x, y);
-        ctx.ctx.lineTo(x, y + lineHeight);
+        ctx.ctx.moveTo(cursorX, cursorY);
+        ctx.ctx.lineTo(cursorX, cursorY + cursorHeight);
         ctx.ctx.stroke();
 
         ctx.ctx.restore();
