@@ -63,8 +63,36 @@ export class MapEditor extends CanvasEngine {
 
         this.inspectorPanel.update();
         this.controlPanel.updateHistoryButtons();
-
         this.controlPanel.updateClipboardButtons();
+
+     
+
+    }
+
+    async enableWASM() {
+        try {
+            console.log('Current objects before WASM:', this.objects.getObjectCount());
+
+            const { createSpatialGrid } = await import('../core/SpatialGridWASM.js');
+            const wasmGrid = await createSpatialGrid(100);
+
+            // Replace with WASM grid
+            this.spatialGrid = wasmGrid;
+            console.log('WASM SpatialGrid enabled');
+
+            // Copy existing objects to WASM grid
+            const objectCount = this.objects.getObjectCount();
+            for (let i = 0; i < objectCount; i++) {
+                const bounds = this.objects.getBounds(i);
+                const id = this.objects.getIdByIndex(i);
+                this.spatialGrid.addObject(id, bounds.x, bounds.y, bounds.width, bounds.height);
+            }
+
+            console.log('Objects in WASM grid after copy:', this.spatialGrid.getObjectCount());
+
+        } catch (error) {
+            console.error('Failed to enable WASM:', error);
+        }
     }
 
     // Override history exec to set propertyEvents reference
@@ -84,8 +112,7 @@ export class MapEditor extends CanvasEngine {
             await this.pluginManager.loadPlugin('../plugins/CorePlugin.js');
 
             // Load text plugin
-            +           await this.pluginManager.loadPlugin('../plugins/TextPlugin.js');
-
+            await this.pluginManager.loadPlugin('../plugins/TextPlugin.js');
 
             // Set default tool after plugins are loaded
             if (this.tools.has('select')) {
@@ -274,7 +301,7 @@ export class MapEditor extends CanvasEngine {
         if (rotation === 0) {
             return this.getCursorForHandle(handle);
         }
-        
+
         // Map handle to angle relative to object
         const handleAngles = {
             'nw': -45,
@@ -286,11 +313,11 @@ export class MapEditor extends CanvasEngine {
             'e': 90,
             'w': 270
         };
-        
+
         const baseAngle = handleAngles[handle] || 0;
         const totalAngle = (baseAngle + rotation) % 360;
         const normalizedAngle = totalAngle < 0 ? totalAngle + 360 : totalAngle;
-        
+
         // Convert angle to appropriate cursor
         if (normalizedAngle >= 337.5 || normalizedAngle < 22.5) return 'ns-resize';
         if (normalizedAngle >= 22.5 && normalizedAngle < 67.5) return 'nesw-resize';
@@ -300,7 +327,7 @@ export class MapEditor extends CanvasEngine {
         if (normalizedAngle >= 202.5 && normalizedAngle < 247.5) return 'nesw-resize';
         if (normalizedAngle >= 247.5 && normalizedAngle < 292.5) return 'ew-resize';
         if (normalizedAngle >= 292.5 && normalizedAngle < 337.5) return 'nwse-resize';
-        
+
         return 'default';
     }
 
@@ -335,7 +362,7 @@ export class MapEditor extends CanvasEngine {
         return {
             // Object operations
             objects: this.objects,
-            spatialGrid: this.spatialGrid,
+            get spatialGrid() { return editor.spatialGrid; },
             tools: this.tools,
             getObjectAt: this.getObjectAt.bind(this),
             deleteObject: this.deleteObject.bind(this),
@@ -448,16 +475,16 @@ export class MapEditor extends CanvasEngine {
         const bounds = this.objects.getBounds(index);
         const extra = this.objects.extra[index];
         const rotation = extra?.rotation || 0;
-        
+
         if (rotation === 0) {
             return bounds;
         }
-        
+
         // คำนวณ rotated bounding box
         const centerX = bounds.x + bounds.width / 2;
         const centerY = bounds.y + bounds.height / 2;
         const rad = (rotation * Math.PI) / 180;
-        
+
         // หาจุด 4 มุมหลัง rotation
         const corners = [
             { x: bounds.x, y: bounds.y },
@@ -465,10 +492,10 @@ export class MapEditor extends CanvasEngine {
             { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
             { x: bounds.x, y: bounds.y + bounds.height }
         ];
-        
+
         let minX = Infinity, minY = Infinity;
         let maxX = -Infinity, maxY = -Infinity;
-        
+
         for (const corner of corners) {
             // Rotate relative to center
             const relX = corner.x - centerX;
@@ -477,13 +504,13 @@ export class MapEditor extends CanvasEngine {
             const rotY = relX * Math.sin(rad) + relY * Math.cos(rad);
             const worldX = centerX + rotX;
             const worldY = centerY + rotY;
-            
+
             minX = Math.min(minX, worldX);
             minY = Math.min(minY, worldY);
             maxX = Math.max(maxX, worldX);
             maxY = Math.max(maxY, worldY);
         }
-        
+
         return {
             x: minX,
             y: minY,
@@ -495,10 +522,10 @@ export class MapEditor extends CanvasEngine {
 
     addDirtyRect(bounds, index = null) {
         // ถ้ามี index ให้ใช้ visual bounds แทน
-        const actualBounds = index !== null && index !== undefined 
-            ? this.getVisualBounds(index) 
+        const actualBounds = index !== null && index !== undefined
+            ? this.getVisualBounds(index)
             : bounds;
-            
+
         const dpr = this.dpr || window.devicePixelRatio || 1;
 
         // world -> screen (CSS px)
@@ -565,10 +592,12 @@ export class MapEditor extends CanvasEngine {
     }
 
     getObjectAt(x, y) {
-        // Use spatial grid for efficient hit-testing
+        if (!this.spatialGrid) return -1;
+
         const candidateIds = this.spatialGrid.getObjectsAt(x, y);
 
-        if (candidateIds.size === 0) {
+        // Check if candidateIds exists and has size property
+        if (!candidateIds || candidateIds.size === 0) {
             return -1;
         }
 
@@ -586,7 +615,6 @@ export class MapEditor extends CanvasEngine {
 
         // Check from top to bottom
         for (const index of indices) {
-            // Use renderer system for hit testing
             const obj = {
                 type: this.objects.types[index],
                 mapType: this.objects.mapTypes[index],
@@ -630,7 +658,14 @@ export class MapEditor extends CanvasEngine {
     updateInfo() {
         document.getElementById('objectCount').textContent = this.objects.getObjectCount();
         document.getElementById('zoomLevel').textContent = Math.round(this.zoom * 100) + '%';
-        document.getElementById('gridCells').textContent = this.spatialGrid.getCellCount();
+
+        // Handle both sync and async getCellCount
+        if (this.spatialGrid.getCellCount) {
+            const count = this.spatialGrid.getCellCount();
+            const cellElement = document.getElementById('gridCells');
+            if (cellElement) cellElement.textContent = count instanceof Promise ? '...' : count;
+        }
+
         document.getElementById('snapStatus').textContent = this.snapEnabled ? 'ON' : 'OFF';
     }
 
@@ -638,11 +673,17 @@ export class MapEditor extends CanvasEngine {
     rebuildSpatialGrid() {
         // Clear และ rebuild spatial grid เพื่อให้ sync กับ objects
         this.spatialGrid.clear();
+
         for (let i = 0; i < this.objects.getObjectCount(); i++) {
             const bounds = this.objects.getBounds(i);
             const id = this.objects.getIdByIndex(i);
+
+            // WASM grid ใช้ sync method (ไม่ return Promise)
             this.spatialGrid.addObject(id, bounds.x, bounds.y, bounds.width, bounds.height);
         }
+
+        // Debug: ตรวจสอบว่า add สำเร็จ
+        console.log('Rebuilt grid with', this.spatialGrid.getObjectCount(), 'objects');
     }
 
 }

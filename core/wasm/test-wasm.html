@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test ES6 Module</title>
+</head>
+<body>
+    <h1>Test WASM Module Loading</h1>
+    <div id="status">Loading...</div>
+
+    <script type="module">
+        async function test() {
+            const status = document.getElementById('status');
+            
+            try {
+                // Import ES6 module
+                const createModule = (await import('./build/spatial_grid.js')).default;
+                console.log('Module imported:', createModule);
+                
+                // Create instance
+                const wasmModule = await createModule();
+                console.log('WASM loaded:', wasmModule);
+                
+                // Test SpatialGrid
+                const grid = new wasmModule.SpatialGrid(100);
+                console.log('Grid created:', grid);
+                
+                // Test operations
+                grid.addObject(1, 100, 100, 50, 50);
+                const result = grid.getObjectsAt(125, 125);
+                console.log('Query result:', result);
+                
+                // Check enum
+                console.log('RadiusPrecision:', wasmModule.RadiusPrecision);
+                
+                status.innerHTML = `
+                    <h2>✅ Success!</h2>
+                    <p>WASM Module loaded</p>
+                    <p>Grid created with ${grid.getObjectCount()} objects</p>
+                `;
+                
+            } catch (error) {
+                status.innerHTML = `<h2>❌ Error!</h2><pre>${error.stack}</pre>`;
+                console.error(error);
+            }
+        }
+        
+        test();
+    </script>
+</body>
+</html>

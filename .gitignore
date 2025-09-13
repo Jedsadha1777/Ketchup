@@ -4,7 +4,6 @@
 .LSOverride
 Icon?
 ._*
-
 # Thumbnails
 ._.DS_Store
 Thumbs.db
@@ -39,3 +38,27 @@ coverage/
 # OS / Misc
 *.bak
 *.log
+
+# ========== WASM/Emscripten ==========
+# Emscripten SDK (ถ้าติดตั้งใน project)
+core/wasm/emsdk/
+emsdk/
+
+# Emscripten cache
+.emscripten_cache/
+.emscripten_ports/
+.emscripten
+
+# WASM build artifacts (ถ้าอยากเก็บไว้ใน git ก็ comment out)
+# *.wasm
+# *.wasm.map
+
+# Intermediate build files
+*.o
+*.bc
+*.a
+*.d
+
+# Emscripten temp files
+*.em-temp/
+*~

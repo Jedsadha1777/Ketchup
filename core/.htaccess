@@ -1,0 +1,7 @@
+# .htaccess
+AddType application/wasm .wasm
+
+# Optional: Add CORS headers if needed
+<FilesMatch "\.(wasm)$">
+    Header set Access-Control-Allow-Origin "*"
+</FilesMatch>
